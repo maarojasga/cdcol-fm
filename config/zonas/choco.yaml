@@ -1,0 +1,8 @@
+# Propuesta del plan, pendiente de confirmar. Pacífico, nubosidad extrema. bbox aproximado.
+id: choco
+pais: colombia
+descripcion: Pacífico, nubosidad extrema (Quibdó)
+bbox: [-76.75, 5.60, -76.55, 5.80]
+fecha_inicio: "2022-01-01"
+fecha_fin: "2025-12-31"
+estado: archivada

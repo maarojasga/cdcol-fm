@@ -1,0 +1,6 @@
+# Línea base: Galileo sin adaptar.
+id: r0-base
+modelo_base: galileo-tiny
+version_base: "pendiente"   # fijar con el hash de pesos en la fase 2
+adaptacion: {}
+semillas: [0]

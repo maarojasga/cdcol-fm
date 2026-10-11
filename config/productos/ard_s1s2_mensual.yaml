@@ -1,0 +1,82 @@
+# Producto eo3 para ODC. Las bandas de incertidumbre van en el mismo producto (ADR 0001).
+name: ard_s1s2_mensual
+description: Compuesto mensual S1+S2 con capas de incertidumbre por píxel
+metadata_type: eo3
+license: CC-BY-4.0
+metadata:
+  product:
+    name: ard_s1s2_mensual
+measurements:
+  - name: B02
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B03
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B04
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B05
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B06
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B07
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B08
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B8A
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B11
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: B12
+    dtype: uint16
+    nodata: 0
+    units: '1'
+  - name: VV
+    dtype: float32
+    nodata: nan
+    units: dB
+  - name: VH
+    dtype: float32
+    nodata: nan
+    units: dB
+  - name: n_validas_s2
+    dtype: uint8
+    nodata: 255
+    units: '1'
+    # observaciones ópticas válidas en el mes
+  - name: dias_desde_clara
+    dtype: uint16
+    nodata: 65535
+    units: '1'
+    # días desde la última observación óptica limpia
+  - name: prob_nube
+    dtype: uint8
+    nodata: 255
+    units: '1'
+    # probabilidad media de nube (0-100)
+  - name: n_adq_s1
+    dtype: uint8
+    nodata: 255
+    units: '1'
+    # adquisiciones S1 en el mes
+  - name: incert_s2
+    dtype: float32
+    nodata: nan
+    units: '1'
+    # dispersión de las observaciones válidas
