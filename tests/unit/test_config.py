@@ -9,7 +9,7 @@ from cdcol_fm.config import RAIZ_CONFIG, Zona, cargar_pais, cargar_receta, lista
 
 def test_todas_las_zonas_son_validas() -> None:
     zonas = listar_zonas()
-    assert {z.id for z in zonas} >= {"prueba", "eje-cafetero", "meta-arroz", "choco"}
+    assert {z.id for z in zonas} >= {"prueba", "macarena", "eje-cafetero", "meta-arroz", "choco"}
     for z in zonas:
         assert cargar_pais(z.pais).grilla.crs == "EPSG:9377"
 
