@@ -6,6 +6,7 @@ zona y en la grilla nacional: la salida cae alineada con S2 sin remuestrear otra
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -13,12 +14,13 @@ import xarray as xr
 
 from cdcol_fm.config import Pais, Zona
 from cdcol_fm.fuentes.stac import DEM_GLO30, buscar
+from cdcol_fm.ingesta.carga import grilla_destino
 
 # Aplanamiento gamma: el estándar para RTC (Small 2011); "nearest" es mucho más rápido.
 RADIOMETRIA = "gamma_bilinear"
 
 
-def preparar_dem(zona: Zona, pais: Pais, ruta: Path) -> Path:
+def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path:
     """Copernicus GLO-30 remuestreado a la grilla nacional y recortado a la zona."""
     import odc.stac
     import rioxarray  # noqa: F401
@@ -29,9 +31,7 @@ def preparar_dem(zona: Zona, pais: Pais, ruta: Path) -> Path:
     dem = odc.stac.load(
         items,
         bands=["data"],
-        bbox=zona.bbox,
-        crs=pais.grilla.crs,
-        resolution=pais.grilla.resolucion_m,
+        **grilla_destino(zona, pais, geobox),
         resampling="bilinear",
     )["data"].isel(time=0, drop=True)
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -54,14 +54,19 @@ def rtc_escena(safe: Path, polarizacion: str, dem: Path, salida: Path) -> xr.Dat
 
 
 def cargar_s1_cdse(
-    items: list[Any], zona: Zona, pais: Pais, trabajo: Path, avisar: Any = print
+    items: list[Any],
+    zona: Zona,
+    pais: Pais,
+    trabajo: Path,
+    avisar: Any = print,
+    geobox: Any = None,
 ) -> xr.Dataset:
     """Serie S1 (VV, VH, lineal) corregida por relieve, en la grilla nacional."""
     import rioxarray
 
     from cdcol_fm.fuentes.cdse import descargar_safe, es_iw
 
-    dem = preparar_dem(zona, pais, trabajo / "dem.tif")
+    dem = preparar_dem(zona, pais, trabajo / "dem.tif", geobox)
     avisar(f"DEM GLO-30 listo en {pais.grilla.crs}")
     capas = []
     for item in sorted((it for it in items if es_iw(it)), key=lambda it: it.datetime):
@@ -74,6 +79,8 @@ def cargar_s1_cdse(
             leida = rioxarray.open_rasterio(ruta, masked=True)
             assert isinstance(leida, xr.DataArray)
             pols[pol] = leida.squeeze("band", drop=True)
+        # el SAFE pesa ~1-2 GB: se borra apenas queda el gamma0 del bloque (disco del runner: 14 GB)
+        shutil.rmtree(safe, ignore_errors=True)
         capa = xr.Dataset(pols).expand_dims(time=[item.datetime.replace(tzinfo=None)])
         capas.append(capa)
         avisar(f"RTC {item.id}")

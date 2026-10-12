@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from cdcol_fm.ard.escritura import PRODUCTO
+from cdcol_fm.ard.escritura import carpeta_producto
 
 
 def _leer(ruta: Path) -> np.ndarray:
@@ -16,13 +16,13 @@ def _leer(ruta: Path) -> np.ndarray:
     return np.asarray(capa).ravel()
 
 
-def resumen_markdown(destino: Path, zona: str) -> str:
+def resumen_markdown(destino: Path, zona: str, bloque: str | None = None) -> str:
     filas = [
         "| Mes | Obs. S2 válidas (media) | Píxeles sin ninguna válida | "
         "Días desde vista clara (mediana) | Nube (% de obs.) | Pasos S1 (media) |",
         "|---|---|---|---|---|---|",
     ]
-    for carpeta in sorted((destino / zona / PRODUCTO).glob("*-*")):
+    for carpeta in sorted(carpeta_producto(destino, zona, bloque).glob("*-*")):
         n = _leer(carpeta / "n_validas_s2.tif")
         dias = _leer(carpeta / "dias_desde_clara.tif")
         nube = _leer(carpeta / "prob_nube.tif")

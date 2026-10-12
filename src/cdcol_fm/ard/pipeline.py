@@ -8,8 +8,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from cdcol_fm.ard.bloques import bloque as cargar_bloque
+from cdcol_fm.ard.bloques import recortar_zona
 from cdcol_fm.ard.compuesto import compuesto_mensual
-from cdcol_fm.ard.escritura import PRODUCTO, escribir_mes
+from cdcol_fm.ard.escritura import carpeta_producto, escribir_mes
 from cdcol_fm.ciclo.manifiesto import ItemFuente, Manifiesto, Producto
 from cdcol_fm.config import RAIZ_CONFIG, cargar_pais, cargar_zona
 from cdcol_fm.fuentes.stac import S1_GRD_CDSE, S1_RTC, S2_L2A, buscar
@@ -37,24 +39,34 @@ def construir_ard(
     destino: Path,
     avisar: Callable[[str], None] = print,
     fuente_s1: str = "pc",
+    id_bloque: str | None = None,
+    desde: str | None = None,
+    hasta: str | None = None,
 ) -> Manifiesto:
-    """``fuente_s1``: ``pc`` (RTC de Planetary Computer) o ``cdse`` (GRD + RTC propio)."""
-    zona = cargar_zona(id_zona)
-    pais = cargar_pais(zona.pais)
+    """``fuente_s1``: ``pc`` (RTC de Planetary Computer) o ``cdse`` (GRD + RTC propio).
+
+    Con ``id_bloque`` se calcula solo ese bloque de la grilla nacional; con ``desde`` y
+    ``hasta`` (``AAAA-MM``), solo esos meses. Así una zona grande se parte en trabajos chicos.
+    """
+    zona_completa = cargar_zona(id_zona)
+    pais = cargar_pais(zona_completa.pais)
+    bloque_ = cargar_bloque(id_bloque, pais) if id_bloque else None
+    geobox = bloque_.geobox() if bloque_ else None
+    zona = recortar_zona(zona_completa, bloque_, desde, hasta)
 
     items_s2 = buscar(S2_L2A, zona)
     avisar(f"S2: {len(items_s2)} escenas")
     if not items_s2:
         raise RuntimeError(f"no hay escenas S2 para {id_zona}")
-    s2 = cargar_s2(items_s2, zona, pais)
+    s2 = cargar_s2(items_s2, zona, pais, geobox)
     if fuente_s1 == "cdse":
         from cdcol_fm.ard.rtc import cargar_s1_cdse
         from cdcol_fm.fuentes.cdse import es_iw
 
         items_s1 = [it for it in buscar(S1_GRD_CDSE, zona) if es_iw(it)]
         avisar(f"S1 (CDSE GRD): {len(items_s1)} escenas")
-        trabajo = destino / id_zona / "_trabajo"
-        s1 = cargar_s1_cdse(items_s1, zona, pais, trabajo, avisar) if items_s1 else None
+        trabajo = destino / id_zona / f"_trabajo_{id_bloque or 'zona'}"
+        s1 = cargar_s1_cdse(items_s1, zona, pais, trabajo, avisar, geobox) if items_s1 else None
         if s1 is not None:
             # misma grilla que S2 por construcción; esto solo absorbe redondeos de coordenadas
             tol = pais.grilla.resolucion_m / 2
@@ -65,7 +77,7 @@ def construir_ard(
     elif fuente_s1 == "pc":
         items_s1 = buscar(S1_RTC, zona)
         avisar(f"S1 (PC RTC): {len(items_s1)} escenas")
-        s1 = cargar_s1(items_s1, zona, pais) if items_s1 else None
+        s1 = cargar_s1(items_s1, zona, pais, geobox) if items_s1 else None
     else:
         raise ValueError(f"fuente_s1 desconocida: {fuente_s1}")
     ard = compuesto_mensual(s2, s1).compute()
@@ -76,8 +88,8 @@ def construir_ard(
         mes = ard.isel(time=i)
         clave = str(mes["time"].values)[:7]
         ids = [it.id for it in items_s2 + items_s1 if _mes(it) == clave]
-        item = escribir_mes(mes, destino, id_zona, ids, commit)
-        ruta_item = destino / id_zona / PRODUCTO / clave / "item.json"
+        item = escribir_mes(mes, destino, id_zona, ids, commit, id_bloque)
+        ruta_item = carpeta_producto(destino, id_zona, id_bloque) / clave / "item.json"
         productos.append(
             Producto(nombre=item["id"], version="v0", sha256=sha256_archivo(ruta_item))
         )

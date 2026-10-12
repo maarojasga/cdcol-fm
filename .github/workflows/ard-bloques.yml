@@ -1,0 +1,87 @@
+# ARD de una zona grande, partido en bloques de la grilla nacional (uno por trabajo).
+# En un PR corre un solo bloque de La Macarena por tres meses, para medir tiempo y peso.
+# A mano (Actions → "ARD por bloques" → Run workflow) se elige zona, bloques y meses.
+name: ARD por bloques
+on:
+  pull_request:
+    paths: ["src/**", "pyproject.toml", "uv.lock", ".github/workflows/ard-bloques.yml"]
+  workflow_dispatch:
+    inputs:
+      zona:
+        description: Zona de config/zonas/
+        default: macarena
+      bloques:
+        description: 'Lista JSON de bloques, p. ej. ["x480_y182"], o "todos"'
+        default: '["x480_y182"]'
+      desde:
+        description: Primer mes (AAAA-MM)
+        default: "2024-01"
+      hasta:
+        description: Último mes (AAAA-MM)
+        default: "2024-03"
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      bloques: ${{ steps.lista.outputs.bloques }}
+    env:
+      ZONA: ${{ inputs.zona || 'macarena' }}
+      BLOQUES: ${{ inputs.bloques || '["x480_y182"]' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra cubo
+      - id: lista
+        run: |
+          if [ "$BLOQUES" = "todos" ]; then
+            BLOQUES=$(uv run cdcol bloques "$ZONA" --json)
+          fi
+          echo "bloques=$BLOQUES" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Bloques de $ZONA::$(uv run cdcol bloques "$ZONA" | head -1); se calculan $BLOQUES"
+
+  ard:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        bloque: ${{ fromJSON(needs.plan.outputs.bloques) }}
+    env:
+      ZONA: ${{ inputs.zona || 'macarena' }}
+      DESDE: ${{ inputs.desde || '2024-01' }}
+      HASTA: ${{ inputs.hasta || '2024-03' }}
+      BLOQUE: ${{ matrix.bloque }}
+      NO_COLOR: "1"
+      CDSE_S3_ACCESS_KEY: ${{ secrets.CDSE_S3_ACCESS_KEY }}
+      CDSE_S3_SECRET_KEY: ${{ secrets.CDSE_S3_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra cubo --extra radar
+      - run: |
+          set -o pipefail
+          inicio=$(date +%s)
+          # cada línea con los segundos transcurridos, para saber qué etapa pesa
+          uv run cdcol ard "$ZONA" --salida data --s1 cdse --bloque "$BLOQUE" --desde "$DESDE" --hasta "$HASTA" 2>&1 \
+            | while IFS= read -r l; do echo "$(( $(date +%s) - inicio ))s $l"; done | tee ard.log || {
+            echo "::error title=ARD $BLOQUE::$(grep -vE 'sys.excepthook|Original exception was|^\s*$' ard.log | tail -n 40 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+          # una sola anotación con las etapas (los logs no se leen desde la API)
+          echo "::notice title=Etapas $BLOQUE::$(grep -vE '^[0-9]+s RTC ' ard.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice title=RTC $BLOQUE::$(grep -cE '^[0-9]+s RTC ' ard.log) escenas S1; última a los $(grep -E '^[0-9]+s RTC ' ard.log | tail -1 | cut -d' ' -f1)"
+          echo "::notice title=Peso $BLOQUE::$(du -sh data/$ZONA | cut -f1) de productos; disco libre $(df -h . | tail -1 | awk '{print $4}')"
+      - run: |
+          uv run cdcol resumen "$ZONA" --salida data --bloque "$BLOQUE" > resumen.md
+          grep '^| 20' resumen.md | while read -r fila; do echo "::notice title=ARD $BLOQUE::$fila"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ard-${{ env.ZONA }}-${{ matrix.bloque }}
+          path: data/
+          retention-days: 3
