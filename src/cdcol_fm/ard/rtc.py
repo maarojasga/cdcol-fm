@@ -20,6 +20,7 @@ from cdcol_fm.ingesta.carga import grilla_destino
 # Aplanamiento gamma: el estándar para RTC (Small 2011); "nearest" es mucho más rápido.
 RADIOMETRIA = "gamma_bilinear"
 TROZO = 1024  # chunks por defecto de sarsen.terrain_correction
+VENTANA = 2048  # lado (px) de cada corrida de sarsen; acota la memoria
 
 
 def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path:
@@ -78,8 +79,8 @@ def geobox_zona(zona: Zona, pais: Pais) -> Any:
     )
 
 
-def _recorte(item: Any, geobox: Any, pais: Pais) -> Any:
-    """La parte de ``geobox`` que la escena cubre, o None si no la toca."""
+def _recorte(item: Any, geobox: Any, pais: Pais) -> tuple[Any, Any] | None:
+    """La parte de ``geobox`` que la escena cubre (y la huella de la escena), o None."""
     from odc.geo.geobox import GeoBox
     from odc.geo.geom import Geometry
 
@@ -93,7 +94,20 @@ def _recorte(item: Any, geobox: Any, pais: Pais) -> Any:
     # sarsen trabaja en trozos de 1024 px con un borde de 128: un último trozo más angosto que
     # el borde rompe dask. Se completa a múltiplos de 1024 (lo que sobra sale sin dato).
     alto, ancho = (-(-n // TROZO) * TROZO for n in recorte.shape)
-    return GeoBox((alto, ancho), recorte.affine, recorte.crs)
+    return GeoBox((alto, ancho), recorte.affine, recorte.crs), comun
+
+
+def _ventanas(recorte: Any, huella: Any) -> list[tuple[int, int, Any]]:
+    """Ventanas de ``VENTANA`` px del recorte que tocan la huella: (fila, columna, geobox)."""
+    alto, ancho = recorte.shape
+    salida = []
+    for f in range(0, alto, VENTANA):
+        for c in range(0, ancho, VENTANA):
+            # GeoBox no recorta al pasarse del borde: se limita a mano
+            sub = recorte[f : min(f + VENTANA, alto), c : min(c + VENTANA, ancho)]
+            if sub.extent.intersects(huella):
+                salida.append((f, c, sub))
+    return salida
 
 
 def rtc_escenas(
@@ -106,31 +120,60 @@ def rtc_escenas(
 ) -> list[EscenaRTC]:
     """Baja y corrige cada escena una sola vez, recortada a la zona (o al ``geobox`` dado).
 
-    Los bloques luego leen su ventana de estos rasters, sin volver a descargar nada.
+    La corrección corre por ventanas (la zona entera de una vez no cabe en la memoria del
+    runner) y cada ventana se escribe en un solo raster por escena y polarización. Los
+    bloques luego leen su parte de ese raster, sin volver a descargar nada.
     """
+    import rasterio  # type: ignore[import-untyped]
+    from rasterio.windows import Window  # type: ignore[import-untyped]
+
     from cdcol_fm.fuentes.cdse import descargar_safe, es_iw
 
     geobox = geobox if geobox is not None else geobox_zona(zona, pais)
     salida = []
     for item in sorted((it for it in items if es_iw(it)), key=lambda it: it.datetime):
-        recorte = _recorte(item, geobox, pais)
-        if recorte is None:
+        r = _recorte(item, geobox, pais)
+        if r is None:
             continue
-        dem = preparar_dem(zona, pais, trabajo / "dem" / f"{item.id}.tif", recorte)
+        recorte, huella = r
+        ventanas = _ventanas(recorte, huella)
         safe = descargar_safe(item, trabajo / "safe")
         rutas = {}
         for pol in ("VV", "VH"):
             ruta = trabajo / "rtc" / f"{item.id}_{pol}.tif"
             ruta.parent.mkdir(parents=True, exist_ok=True)
-            rtc_escena(safe, pol, dem, ruta)
+            alto, ancho = recorte.shape
+            perfil = {
+                "driver": "GTiff",
+                "width": ancho,
+                "height": alto,
+                "count": 1,
+                "dtype": "float32",
+                "nodata": float("nan"),
+                "crs": str(recorte.crs),
+                "transform": recorte.affine,
+                "tiled": True,
+                "compress": "deflate",
+                "BIGTIFF": "IF_SAFER",
+            }
+            with rasterio.open(ruta, "w", **perfil) as destino:
+                for f, c, sub in ventanas:
+                    dem = preparar_dem(zona, pais, trabajo / "dem.tif", sub)
+                    parcial = trabajo / "parcial.tif"
+                    rtc_escena(safe, pol, dem, parcial)
+                    with rasterio.open(parcial) as fuente:
+                        h, w = fuente.height, fuente.width
+                        destino.write(fuente.read(1), 1, window=Window(c, f, w, h))
             rutas[pol] = ruta
         # el SAFE pesa ~1-2 GB: se borra apenas queda el gamma0 recortado
         shutil.rmtree(safe, ignore_errors=True)
-        dem.unlink(missing_ok=True)
         salida.append(EscenaRTC(item, rutas))
         libre_gb = shutil.disk_usage(trabajo).free / 1e9
         alto, ancho = recorte.shape
-        avisar(f"RTC {item.id} {ancho}x{alto} px (disco libre {libre_gb:.0f} GB)")
+        avisar(
+            f"RTC {item.id} {ancho}x{alto} px en {len(ventanas)} ventanas "
+            f"(disco libre {libre_gb:.0f} GB)"
+        )
     return salida
 
 

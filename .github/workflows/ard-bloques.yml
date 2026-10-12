@@ -79,6 +79,10 @@ jobs:
           # una sola anotación con las etapas (los logs no se leen desde la API)
           echo "::notice title=Etapas $MES::$(grep -E '^[0-9]+s (RTC|20[0-9]{2}-|S2|S1|bloque)' ard.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
           echo "::notice title=Peso $MES::$(du -sh data/$ZONA | cut -f1) de productos; disco libre $(df -h . | tail -1 | awk '{print $4}')"
+      # si el proceso muere sin traza (p. ej. sin memoria), al menos se ve hasta dónde llegó
+      - if: failure()
+        run: |
+          echo "::error title=Corte $MES::$({ tail -n 12 ard.log; free -h; } | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
       - run: |
           for b in $(ls data/$ZONA/ard_s1s2_mensual/); do
             fila=$(uv run cdcol resumen "$ZONA" --salida data --bloque "$b" | grep '^| 20')

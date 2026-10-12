@@ -71,7 +71,24 @@ def test_recorte_en_multiplos_de_trozo() -> None:
     b = gb.geographic_extent.boundingbox
     anillo = [[b.left, b.bottom], [b.right, b.bottom], [b.right, b.top], [b.left, b.top]]
     item = SimpleNamespace(geometry={"type": "Polygon", "coordinates": [anillo + [anillo[0]]]})
-    recorte = _recorte(item, gb, pais)
-    assert recorte is not None
+    r = _recorte(item, gb, pais)
+    assert r is not None
+    recorte, _ = r
     assert all(n % TROZO == 0 for n in recorte.shape)
     assert recorte.affine.c == pytest.approx(gb.affine.c, abs=10)
+
+
+def test_ventanas_cubren_el_recorte() -> None:
+    from odc.geo.geom import box
+
+    from cdcol_fm.ard.rtc import VENTANA, _ventanas
+
+    recorte = GeoBox((3 * 1024, 5 * 1024), Affine(10, 0, 0, 0, -10, 100000), CRS)
+    ventanas = _ventanas(recorte, recorte.extent)
+    assert len(ventanas) == 2 * 3  # 3072/2048 → 2 filas, 5120/2048 → 3 columnas
+    assert sum(sub.shape[0] * sub.shape[1] for _, _, sub in ventanas) == 3 * 5 * 1024**2
+    assert all(n % 1024 == 0 for _, _, sub in ventanas for n in sub.shape)
+    assert ventanas[1][:2] == (0, VENTANA)
+    # una huella que solo toca la esquina superior izquierda
+    esquina = box(0, 100000 - 5000, 5000, 100000, CRS)
+    assert [(f, c) for f, c, _ in _ventanas(recorte, esquina)] == [(0, 0)]
