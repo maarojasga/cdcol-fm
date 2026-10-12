@@ -32,7 +32,8 @@ jobs:
           set -o pipefail
           # si falla, las últimas líneas salen como anotaciones (los logs no se leen desde la API)
           uv run cdcol ard "$ZONA" --salida data --s1 "$FUENTE" 2>&1 | tee ard.log || {
-            tail -n 25 ard.log | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=ARD $ZONA::$l"; done
+            # una sola anotación (GitHub limita a 10 errores por paso); %0A es salto de línea
+            echo "::error title=ARD $ZONA::$(tail -n 30 ard.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1
           }
       - run: |
