@@ -19,6 +19,7 @@ from cdcol_fm.ingesta.carga import grilla_destino
 
 # Aplanamiento gamma: el estándar para RTC (Small 2011); "nearest" es mucho más rápido.
 RADIOMETRIA = "gamma_bilinear"
+TROZO = 1024  # chunks por defecto de sarsen.terrain_correction
 
 
 def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path:
@@ -26,6 +27,10 @@ def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path
     import odc.stac
     import rioxarray  # noqa: F401
 
+    if geobox is not None:
+        # buscar las teselas del DEM que cubren la grilla pedida, que puede salirse de la zona
+        b = geobox.geographic_extent.boundingbox
+        zona = zona.model_copy(update={"bbox": (b.left, b.bottom, b.right, b.top)})
     items = buscar(DEM_GLO30, zona)
     if not items:
         raise RuntimeError(f"No hay teselas GLO-30 para la zona {zona.id}")
@@ -82,7 +87,13 @@ def _recorte(item: Any, geobox: Any, pais: Pais) -> Any:
     comun = huella.intersection(geobox.extent)
     if comun.is_empty:
         return None
-    return GeoBox.from_bbox(comun.boundingbox, pais.grilla.crs, resolution=pais.grilla.resolucion_m)
+    recorte = GeoBox.from_bbox(
+        comun.boundingbox, pais.grilla.crs, resolution=pais.grilla.resolucion_m
+    )
+    # sarsen trabaja en trozos de 1024 px con un borde de 128: un último trozo más angosto que
+    # el borde rompe dask. Se completa a múltiplos de 1024 (lo que sobra sale sin dato).
+    alto, ancho = (-(-n // TROZO) * TROZO for n in recorte.shape)
+    return GeoBox((alto, ancho), recorte.affine, recorte.crs)
 
 
 def rtc_escenas(

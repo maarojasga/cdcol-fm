@@ -60,3 +60,18 @@ def test_geobox_zona_alineado_a_la_resolucion() -> None:
     gb = geobox_zona(cargar_zona("prueba"), pais)
     x0, y1 = gb.affine.c, gb.affine.f
     assert x0 % 10 == pytest.approx(0) and y1 % 10 == pytest.approx(0)
+
+
+def test_recorte_en_multiplos_de_trozo() -> None:
+    from cdcol_fm.ard.rtc import TROZO, _recorte
+
+    pais = cargar_pais("colombia")
+    gb = geobox_zona(cargar_zona("macarena"), pais)
+    # una escena que cubre toda la zona
+    b = gb.geographic_extent.boundingbox
+    anillo = [[b.left, b.bottom], [b.right, b.bottom], [b.right, b.top], [b.left, b.top]]
+    item = SimpleNamespace(geometry={"type": "Polygon", "coordinates": [anillo + [anillo[0]]]})
+    recorte = _recorte(item, gb, pais)
+    assert recorte is not None
+    assert all(n % TROZO == 0 for n in recorte.shape)
+    assert recorte.affine.c == pytest.approx(gb.affine.c, abs=10)
