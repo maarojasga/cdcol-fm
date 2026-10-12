@@ -83,7 +83,8 @@ def cargar_s1_cdse(
         shutil.rmtree(safe, ignore_errors=True)
         capa = xr.Dataset(pols).expand_dims(time=[item.datetime.replace(tzinfo=None)])
         capas.append(capa)
-        avisar(f"RTC {item.id}")
+        libre_gb = shutil.disk_usage(trabajo).free / 1e9
+        avisar(f"RTC {item.id} (disco libre {libre_gb:.0f} GB)")
     serie = xr.concat(capas, dim="time")
     # varias escenas del mismo paso (cortes contiguos de la franja) → una sola fecha
     serie = serie.assign_coords(time=serie["time"].dt.floor("D"))

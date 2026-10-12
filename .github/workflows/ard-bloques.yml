@@ -63,6 +63,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      # el runner trae ~14 GB libres; quitar SDKs que no se usan deja ~40 GB para los SAFE
+      - run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          echo "::notice title=Disco::$(df -h . | tail -1 | awk '{print $4}') libres"
       - run: uv sync --locked --extra cubo --extra radar
       - run: |
           set -o pipefail
@@ -70,7 +74,7 @@ jobs:
           # cada línea con los segundos transcurridos, para saber qué etapa pesa
           uv run cdcol ard "$ZONA" --salida data --s1 cdse --bloque "$BLOQUE" --desde "$DESDE" --hasta "$HASTA" 2>&1 \
             | while IFS= read -r l; do echo "$(( $(date +%s) - inicio ))s $l"; done | tee ard.log || {
-            echo "::error title=ARD $BLOQUE::$(grep -vE 'sys.excepthook|Original exception was|^\s*$' ard.log | tail -n 40 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            echo "::error title=ARD $BLOQUE::$({ head -n 8 ard.log; echo ...; grep -vE 'sys.excepthook|Original exception was|^[0-9]+s\s*$' ard.log | tail -n 30; } | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1
           }
           # una sola anotación con las etapas (los logs no se leen desde la API)
