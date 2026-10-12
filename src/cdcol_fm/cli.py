@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Annotated
+
 import typer
 
 from cdcol_fm import __version__
@@ -38,15 +41,28 @@ def _pendiente(fase: int) -> None:
 
 
 @app.command()
-def ingestar(zona: str) -> None:
-    """Busca S1/S2 en STAC e indexa los ítems de la zona en ODC."""
-    _pendiente(1)
+def ard(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+) -> None:
+    """Calcula el producto ard_s1s2_mensual con sus capas de incertidumbre."""
+    from cdcol_fm.ard.pipeline import construir_ard
+
+    manifiesto = construir_ard(zona, salida, avisar=typer.echo)
+    ruta = salida / zona / "manifiesto.json"
+    manifiesto.guardar(ruta)
+    typer.echo(f"Manifiesto: {ruta}")
 
 
 @app.command()
-def ard(zona: str) -> None:
-    """Calcula el producto ard_s1s2_mensual con sus capas de incertidumbre."""
-    _pendiente(1)
+def resumen(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+) -> None:
+    """Tabla por mes de las capas de incertidumbre de una zona ya calculada."""
+    from cdcol_fm.ard.resumen import resumen_markdown
+
+    typer.echo(resumen_markdown(salida, zona))
 
 
 @app.command()

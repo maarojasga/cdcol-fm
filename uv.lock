@@ -510,16 +510,19 @@ dependencies = [
 [package.optional-dependencies]
 cubo = [
     { name = "dask", extra = ["array"] },
-    { name = "datacube", version = "1.9.20", source = { registry = "https://pypi.org/simple" }, extra = ["postgres"], marker = "python_full_version < '3.12'" },
-    { name = "datacube", version = "1.9.22", source = { registry = "https://pypi.org/simple" }, extra = ["postgres"], marker = "python_full_version >= '3.12'" },
-    { name = "odc-apps-dc-tools" },
     { name = "odc-geo" },
     { name = "odc-stac" },
+    { name = "planetary-computer" },
     { name = "pystac" },
     { name = "pystac-client" },
     { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "rioxarray", version = "0.23.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "xarray" },
+]
+indice = [
+    { name = "datacube", version = "1.9.20", source = { registry = "https://pypi.org/simple" }, extra = ["postgres"], marker = "python_full_version < '3.12'" },
+    { name = "datacube", version = "1.9.22", source = { registry = "https://pypi.org/simple" }, extra = ["postgres"], marker = "python_full_version >= '3.12'" },
+    { name = "odc-apps-dc-tools" },
 ]
 modelos = [
     { name = "peft" },
@@ -539,11 +542,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dask", extras = ["array"], marker = "extra == 'cubo'", specifier = ">=2024.6" },
-    { name = "datacube", extras = ["postgres"], marker = "extra == 'cubo'", specifier = ">=1.9" },
-    { name = "odc-apps-dc-tools", marker = "extra == 'cubo'", specifier = ">=1.9" },
+    { name = "datacube", extras = ["postgres"], marker = "extra == 'indice'", specifier = ">=1.9" },
+    { name = "odc-apps-dc-tools", marker = "extra == 'indice'", specifier = ">=1.9" },
     { name = "odc-geo", marker = "extra == 'cubo'", specifier = ">=0.4" },
     { name = "odc-stac", marker = "extra == 'cubo'", specifier = ">=0.4" },
     { name = "peft", marker = "extra == 'modelos'", specifier = ">=0.11" },
+    { name = "planetary-computer", marker = "extra == 'cubo'", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pystac", marker = "extra == 'cubo'", specifier = ">=1.10" },
     { name = "pystac-client", marker = "extra == 'cubo'", specifier = ">=0.8" },
@@ -554,7 +558,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "xarray", marker = "extra == 'cubo'", specifier = ">=2024.6" },
 ]
-provides-extras = ["cubo", "modelos"]
+provides-extras = ["cubo", "indice", "modelos"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3532,6 +3536,25 @@ wheels = [
 ]
 
 [[package]]
+name = "planetary-computer"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pystac" },
+    { name = "pystac-client" },
+    { name = "python-dotenv" },
+    { name = "pytz" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/d3/ccfb0e823e9beb72b7e6b749f0985c4db1530d4e4a145b1b5d12f5de417e/planetary-computer-1.0.0.tar.gz", hash = "sha256:5958a8e1d8ba1aafc7ac45878df2d7d03405806ae31ed2e675333faebca960cc", size = 17076, upload-time = "2023-07-05T13:06:58.679Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/7a/3965a2b58d172e106c1064af19707d29f86a0142c28ff40185490a0a8cfe/planetary_computer-1.0.0-py3-none-any.whl", hash = "sha256:7af5839f9346c1d23d53fff4e80e955db18a2d81992877816e22dcbc2f90c40d", size = 14163, upload-time = "2023-07-05T13:06:57.06Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4542,6 +4565,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
+]
+
+[[package]]
 name = "pytorch-lightning"
 version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
@@ -4558,6 +4590,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/97/e4/5025cb42311b4f8cc6d1b12cd81399ca433159f8e3831ab229c5a6c5177e/pytorch_lightning-2.6.6.tar.gz", hash = "sha256:52c52b20522dd3d3feb3bb3aae2dbe3f291e8e836d4111a74cfd72e9df018834", size = 662507, upload-time = "2026-09-10T09:41:16.684Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/cf/ba8e4cc1b982ff6dc6f9fdef0e4074605438b82640f6270888a10e7e42c3/pytorch_lightning-2.6.6-py3-none-any.whl", hash = "sha256:71f95c7b22f25c4f91cc659e1734bcdc6c69c8b66543f2ed2d78dbe29ce2f167", size = 853045, upload-time = "2026-09-10T09:41:14.923Z" },
+]
+
+[[package]]
+name = "pytz"
+version = "2026.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/21/d83d6ef28c4c912c4bb4d1dcf591f7b8c6bde87b9c66f9f454677314e16d/pytz-2026.5.tar.gz", hash = "sha256:fa23724b9c486543b9ff54a327ee7569ac83ade54bb9afd0fc18676620401c86", size = 318572, upload-time = "2026-10-04T02:37:58.719Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/ef/c66110d46fb800dda0bf33164182dfadabe26a90e4476844d502a23dca8e/pytz-2026.5-py2.py3-none-any.whl", hash = "sha256:e658af3757f9e26a9d25dd2aff38335acd92bc9104f890a894b2c1ba28311b03", size = 506342, upload-time = "2026-10-04T02:37:56.814Z" },
 ]
 
 [[package]]
