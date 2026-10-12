@@ -29,7 +29,12 @@ jobs:
       - run: |
           if [ -n "$CDSE_S3_ACCESS_KEY" ]; then FUENTE=cdse; else FUENTE=pc; fi
           echo "::notice title=ARD $ZONA::S1 desde $FUENTE"
-          uv run cdcol ard "$ZONA" --salida data --s1 "$FUENTE"
+          set -o pipefail
+          # si falla, las últimas líneas salen como anotaciones (los logs no se leen desde la API)
+          uv run cdcol ard "$ZONA" --salida data --s1 "$FUENTE" 2>&1 | tee ard.log || {
+            tail -n 25 ard.log | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=ARD $ZONA::$l"; done
+            exit 1
+          }
       - run: |
           echo "## ARD de la zona $ZONA" >> "$GITHUB_STEP_SUMMARY"
           uv run cdcol resumen "$ZONA" --salida data | tee -a "$GITHUB_STEP_SUMMARY" > resumen.md
