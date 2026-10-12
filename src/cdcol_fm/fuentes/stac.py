@@ -64,6 +64,23 @@ S1_GRD_PC = Fuente(
     firmar=True,
 )
 
+# Fuente elegida por Ale (12-oct-2026) para S1: GRD completo desde Copernicus Data Space.
+# El catálogo es público; los datos (s3://eodata) requieren llaves S3 gratuitas de CDSE.
+S1_GRD_CDSE = Fuente(
+    nombre="s1-cdse",
+    url="https://stac.dataspace.copernicus.eu/v1",
+    coleccion="sentinel-1-grd",
+    bandas=("vv", "vh"),
+)
+
+DEM_GLO30 = Fuente(
+    nombre="dem",
+    url="https://planetarycomputer.microsoft.com/api/stac/v1",
+    coleccion="cop-dem-glo-30",
+    bandas=("data",),
+    firmar=True,
+)
+
 # Asset de Earth Search → nombre de banda en el producto ARD.
 RENOMBRE_S2 = {
     "blue": "B02",
