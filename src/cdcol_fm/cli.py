@@ -55,6 +55,22 @@ def ard(
 
 
 @app.command()
+def escenas(zona: str) -> None:
+    """Cuenta las escenas S2 y S1 de la zona por mes y fecha (para revisar cobertura)."""
+    from collections import Counter
+
+    from cdcol_fm.config import cargar_zona
+    from cdcol_fm.fuentes.stac import S1_RTC, S2_L2A, buscar
+
+    z = cargar_zona(zona)
+    for fuente in (S2_L2A, S1_RTC):
+        items = buscar(fuente, z)
+        por_mes = Counter(it.datetime.strftime("%Y-%m") for it in items)
+        fechas = sorted({it.datetime.strftime("%m-%d") for it in items})
+        typer.echo(f"{fuente.coleccion}: {dict(sorted(por_mes.items()))} fechas={fechas}")
+
+
+@app.command()
 def resumen(
     zona: str,
     salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),

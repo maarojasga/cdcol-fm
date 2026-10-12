@@ -21,6 +21,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --locked --extra cubo
+      - run: |
+          uv run cdcol escenas "$ZONA" | while read -r fila; do echo "::notice title=Escenas $ZONA::$fila"; done
       - run: uv run cdcol ard "$ZONA" --salida data
       - run: |
           echo "## ARD de la zona $ZONA" >> "$GITHUB_STEP_SUMMARY"
