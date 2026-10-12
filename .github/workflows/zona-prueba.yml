@@ -24,7 +24,10 @@ jobs:
       - run: uv run cdcol ard "$ZONA" --salida data
       - run: |
           echo "## ARD de la zona $ZONA" >> "$GITHUB_STEP_SUMMARY"
-          uv run cdcol resumen "$ZONA" --salida data | tee -a "$GITHUB_STEP_SUMMARY"
+          uv run cdcol resumen "$ZONA" --salida data | tee -a "$GITHUB_STEP_SUMMARY" > resumen.md
+          # también como anotaciones, legibles desde la API de checks
+          grep '^| 20' resumen.md | while read -r fila; do echo "::notice title=ARD $ZONA::$fila"; done
+          echo "::notice title=ARD $ZONA escenas::$(uv run python -c "import json;m=json.load(open('data/$ZONA/manifiesto.json'));print(len(m['items_fuente']),'escenas fuente,',len(m['productos']),'meses')")"
       - uses: actions/upload-artifact@v4
         with:
           name: ard-${{ env.ZONA }}
