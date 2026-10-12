@@ -60,14 +60,15 @@ def escenas(zona: str) -> None:
     from collections import Counter
 
     from cdcol_fm.config import cargar_zona
-    from cdcol_fm.fuentes.stac import S1_GRD_ES, S1_RTC, S2_L2A, buscar
+    from cdcol_fm.fuentes.stac import S1_GRD_ES, S1_GRD_PC, S1_RTC, S2_L2A, buscar
 
     z = cargar_zona(zona)
-    for fuente in (S2_L2A, S1_RTC, S1_GRD_ES):
+    for fuente in (S2_L2A, S1_RTC, S1_GRD_PC, S1_GRD_ES):
         items = buscar(fuente, z)
         por_mes = Counter(it.datetime.strftime("%Y-%m") for it in items)
         fechas = sorted({it.datetime.strftime("%m-%d") for it in items})
-        typer.echo(f"{fuente.coleccion}: {dict(sorted(por_mes.items()))} fechas={fechas}")
+        conteo = dict(sorted(por_mes.items()))
+        typer.echo(f"{fuente.nombre} {fuente.coleccion}: {conteo} fechas={fechas}")
 
 
 @app.command()

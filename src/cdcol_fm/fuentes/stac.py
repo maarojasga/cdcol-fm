@@ -56,6 +56,14 @@ S1_GRD_ES = Fuente(
     bandas=("vv", "vh"),
 )
 
+S1_GRD_PC = Fuente(
+    nombre="s1-grd-pc",
+    url="https://planetarycomputer.microsoft.com/api/stac/v1",
+    coleccion="sentinel-1-grd",
+    bandas=("vv", "vh"),
+    firmar=True,
+)
+
 # Asset de Earth Search → nombre de banda en el producto ARD.
 RENOMBRE_S2 = {
     "blue": "B02",
