@@ -59,6 +59,8 @@ def construir_ard(
             # misma grilla que S2 por construcción; esto solo absorbe redondeos de coordenadas
             tol = pais.grilla.resolucion_m / 2
             s1 = s1.reindex(x=s2["x"], y=s2["y"], method="nearest", tolerance=tol)
+            # rioxarray y odc-stac describen el mismo CRS con atributos distintos: manda el de S2
+            s1 = s1.drop_vars("spatial_ref", errors="ignore").load()  # antes de borrar _trabajo
         shutil.rmtree(trabajo, ignore_errors=True)
     elif fuente_s1 == "pc":
         items_s1 = buscar(S1_RTC, zona)
