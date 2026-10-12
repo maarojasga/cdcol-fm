@@ -70,6 +70,24 @@ def ard(
     typer.echo(f"Manifiesto: {ruta}")
 
 
+@app.command("ard-mes")
+def ard_mes(
+    zona: str,
+    mes: Annotated[str, typer.Argument(help="AAAA-MM")],
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    bloques: Annotated[
+        str | None, typer.Option(help="Bloques separados por coma; por defecto, todos")
+    ] = None,
+) -> None:
+    """Un mes de la zona por bloques, corrigiendo cada escena S1 de CDSE una sola vez."""
+    from cdcol_fm.ard.pipeline import construir_ard_mes
+
+    ids = [b.strip() for b in bloques.split(",")] if bloques else None
+    for id_bloque, manifiesto in construir_ard_mes(zona, salida, mes, ids, typer.echo).items():
+        manifiesto.guardar(salida / zona / f"manifiesto_{id_bloque}_{mes}.json")
+    typer.echo(f"{mes}: listo")
+
+
 @app.command()
 def bloques(
     zona: str,

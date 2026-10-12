@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cdcol_fm.ard.bloques import bloque as cargar_bloque
 from cdcol_fm.ard.bloques import recortar_zona
@@ -18,6 +18,9 @@ from cdcol_fm.fuentes.stac import S1_GRD_CDSE, S1_RTC, S2_L2A, buscar
 from cdcol_fm.ingesta.carga import cargar_s1, cargar_s2
 from cdcol_fm.linaje.hashes import sha256_archivo, sha256_bytes
 
+if TYPE_CHECKING:
+    from cdcol_fm.ard.rtc import EscenaRTC
+
 RAIZ_REPO = RAIZ_CONFIG.parent
 
 
@@ -28,6 +31,10 @@ def _commit() -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "desconocido"
+
+
+def _dias(serie: Any) -> set[Any]:
+    return {t.date() for t in serie.indexes["time"]}
 
 
 def _mes(item: Any) -> str:
@@ -42,6 +49,7 @@ def construir_ard(
     id_bloque: str | None = None,
     desde: str | None = None,
     hasta: str | None = None,
+    escenas_s1: list[EscenaRTC] | None = None,
 ) -> Manifiesto:
     """``fuente_s1``: ``pc`` (RTC de Planetary Computer) o ``cdse`` (GRD + RTC propio).
 
@@ -60,20 +68,27 @@ def construir_ard(
         raise RuntimeError(f"no hay escenas S2 para {id_zona}")
     s2 = cargar_s2(items_s2, zona, pais, geobox)
     if fuente_s1 == "cdse":
-        from cdcol_fm.ard.rtc import cargar_s1_cdse
+        from cdcol_fm.ard.rtc import rtc_escenas, s1_en_grilla
         from cdcol_fm.fuentes.cdse import es_iw
 
-        items_s1 = [it for it in buscar(S1_GRD_CDSE, zona) if es_iw(it)]
-        avisar(f"S1 (CDSE GRD): {len(items_s1)} escenas")
         trabajo = destino / id_zona / f"_trabajo_{id_bloque or 'zona'}"
-        s1 = cargar_s1_cdse(items_s1, zona, pais, trabajo, avisar, geobox) if items_s1 else None
+        if escenas_s1 is None:
+            items_s1 = [it for it in buscar(S1_GRD_CDSE, zona) if es_iw(it)]
+            avisar(f"S1 (CDSE GRD): {len(items_s1)} escenas")
+            escenas = rtc_escenas(items_s1, zona, pais, trabajo, avisar, geobox)
+        else:
+            # ya corregidas para toda la zona (construir_ard_mes): solo se lee la ventana
+            escenas = escenas_s1
+        s1 = s1_en_grilla(escenas, s2.odc.geobox) if escenas else None
         if s1 is not None:
+            items_s1 = [e.item for e in escenas if e.item.datetime.date() in _dias(s1)]
             # misma grilla que S2 por construcción; esto solo absorbe redondeos de coordenadas
             tol = pais.grilla.resolucion_m / 2
             s1 = s1.reindex(x=s2["x"], y=s2["y"], method="nearest", tolerance=tol)
-            # rioxarray y odc-stac describen el mismo CRS con atributos distintos: manda el de S2
-            s1 = s1.drop_vars("spatial_ref", errors="ignore").load()  # antes de borrar _trabajo
-        shutil.rmtree(trabajo, ignore_errors=True)
+        else:
+            items_s1 = []
+        if escenas_s1 is None:
+            shutil.rmtree(trabajo, ignore_errors=True)
     elif fuente_s1 == "pc":
         items_s1 = buscar(S1_RTC, zona)
         avisar(f"S1 (PC RTC): {len(items_s1)} escenas")
@@ -107,3 +122,47 @@ def construir_ard(
         ],
         productos=productos,
     )
+
+
+def construir_ard_mes(
+    id_zona: str,
+    destino: Path,
+    mes: str,
+    ids_bloques: list[str] | None = None,
+    avisar: Callable[[str], None] = print,
+) -> dict[str, Manifiesto]:
+    """Un mes de toda la zona (o de algunos bloques), con S1 de CDSE.
+
+    Cada escena S1 se baja y se corrige una sola vez para toda la zona; luego cada bloque
+    lee su ventana. Así una escena no se descarga una vez por bloque.
+    """
+    from cdcol_fm.ard.bloques import bloques_de_zona
+    from cdcol_fm.ard.rtc import rtc_escenas
+    from cdcol_fm.fuentes.cdse import es_iw
+
+    zona_completa = cargar_zona(id_zona)
+    pais = cargar_pais(zona_completa.pais)
+    zona = recortar_zona(zona_completa, None, mes, mes)
+    ids = ids_bloques or [b.id for b in bloques_de_zona(zona_completa, pais)]
+
+    items_s1 = [it for it in buscar(S1_GRD_CDSE, zona) if es_iw(it)]
+    avisar(f"{mes}: {len(items_s1)} escenas S1 (CDSE GRD) para {len(ids)} bloques")
+    trabajo = destino / id_zona / f"_trabajo_{mes}"
+    escenas = rtc_escenas(items_s1, zona, pais, trabajo, avisar)
+    manifiestos = {}
+    try:
+        for id_bloque in ids:
+            avisar(f"bloque {id_bloque}")
+            manifiestos[id_bloque] = construir_ard(
+                id_zona,
+                destino,
+                avisar,
+                "cdse",
+                id_bloque=id_bloque,
+                desde=mes,
+                hasta=mes,
+                escenas_s1=escenas,
+            )
+    finally:
+        shutil.rmtree(trabajo, ignore_errors=True)
+    return manifiestos

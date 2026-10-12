@@ -1,6 +1,7 @@
-# ARD de una zona grande, partido en bloques de la grilla nacional (uno por trabajo).
-# En un PR corre un solo bloque de La Macarena por tres meses, para medir tiempo y peso.
-# A mano (Actions → "ARD por bloques" → Run workflow) se elige zona, bloques y meses.
+# ARD de una zona grande: un trabajo por mes. Cada trabajo corrige cada escena S1 una sola
+# vez para toda la zona y luego calcula los bloques (teselas de la grilla nacional).
+# En un PR corre enero de 2024 en 4 bloques de La Macarena, para medir tiempo y peso.
+# A mano (Actions → "ARD por bloques" → Run workflow) se elige zona, meses y bloques.
 name: ARD por bloques
 on:
   pull_request:
@@ -10,51 +11,49 @@ on:
       zona:
         description: Zona de config/zonas/
         default: macarena
-      bloques:
-        description: 'Lista JSON de bloques, p. ej. ["x480_y182"], o "todos"'
-        default: '["x480_y182"]'
       desde:
         description: Primer mes (AAAA-MM)
         default: "2024-01"
       hasta:
         description: Último mes (AAAA-MM)
-        default: "2024-03"
+        default: "2024-01"
+      bloques:
+        description: Bloques separados por coma; vacío = todos los de la zona
+        default: ""
 jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
-      bloques: ${{ steps.lista.outputs.bloques }}
+      meses: ${{ steps.lista.outputs.meses }}
     env:
-      ZONA: ${{ inputs.zona || 'macarena' }}
-      BLOQUES: ${{ inputs.bloques || '["x480_y182"]' }}
+      DESDE: ${{ inputs.desde || '2024-01' }}
+      HASTA: ${{ inputs.hasta || '2024-01' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-      - run: uv sync --locked --extra cubo
       - id: lista
         run: |
-          if [ "$BLOQUES" = "todos" ]; then
-            BLOQUES=$(uv run cdcol bloques "$ZONA" --json)
-          fi
-          echo "bloques=$BLOQUES" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Bloques de $ZONA::$(uv run cdcol bloques "$ZONA" | head -1); se calculan $BLOQUES"
+          meses=$(python3 -c "
+          import json, sys
+          a, m = map(int, '$DESDE'.split('-')); fa, fm = map(int, '$HASTA'.split('-'))
+          out = []
+          while (a, m) <= (fa, fm):
+              out.append(f'{a}-{m:02d}'); a, m = (a + (m == 12), m % 12 + 1)
+          print(json.dumps(out))")
+          echo "meses=$meses" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Meses::$meses"
 
   ard:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       max-parallel: 5
       matrix:
-        bloque: ${{ fromJSON(needs.plan.outputs.bloques) }}
+        mes: ${{ fromJSON(needs.plan.outputs.meses) }}
     env:
       ZONA: ${{ inputs.zona || 'macarena' }}
-      DESDE: ${{ inputs.desde || '2024-01' }}
-      HASTA: ${{ inputs.hasta || '2024-03' }}
-      BLOQUE: ${{ matrix.bloque }}
+      MES: ${{ matrix.mes }}
+      BLOQUES: ${{ github.event_name == 'pull_request' && 'x479_y182,x480_y182,x479_y183,x480_y183' || inputs.bloques }}
       NO_COLOR: "1"
       CDSE_S3_ACCESS_KEY: ${{ secrets.CDSE_S3_ACCESS_KEY }}
       CDSE_S3_SECRET_KEY: ${{ secrets.CDSE_S3_SECRET_KEY }}
@@ -63,29 +62,31 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      # el runner trae ~14 GB libres; quitar SDKs que no se usan deja ~40 GB para los SAFE
-      - run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          echo "::notice title=Disco::$(df -h . | tail -1 | awk '{print $4}') libres"
+      # el runner trae ~14 GB libres; quitar SDKs que no se usan deja ~30 GB
+      - run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - run: uv sync --locked --extra cubo --extra radar
       - run: |
           set -o pipefail
           inicio=$(date +%s)
+          opciones=()
+          [ -n "$BLOQUES" ] && opciones=(--bloques "$BLOQUES")
           # cada línea con los segundos transcurridos, para saber qué etapa pesa
-          uv run cdcol ard "$ZONA" --salida data --s1 cdse --bloque "$BLOQUE" --desde "$DESDE" --hasta "$HASTA" 2>&1 \
+          uv run cdcol ard-mes "$ZONA" "$MES" --salida data "${opciones[@]}" 2>&1 \
             | while IFS= read -r l; do echo "$(( $(date +%s) - inicio ))s $l"; done | tee ard.log || {
-            echo "::error title=ARD $BLOQUE::$({ head -n 8 ard.log; echo ...; grep -vE 'sys.excepthook|Original exception was|^[0-9]+s\s*$' ard.log | tail -n 30; } | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            echo "::error title=ARD $MES::$({ head -n 8 ard.log; echo ...; grep -vE 'sys.excepthook|Original exception was|^[0-9]+s\s*$' ard.log | tail -n 30; } | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1
           }
           # una sola anotación con las etapas (los logs no se leen desde la API)
-          echo "::notice title=Etapas $BLOQUE::$(grep -vE '^[0-9]+s RTC ' ard.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::notice title=RTC $BLOQUE::$(grep -cE '^[0-9]+s RTC ' ard.log) escenas S1; última a los $(grep -E '^[0-9]+s RTC ' ard.log | tail -1 | cut -d' ' -f1)"
-          echo "::notice title=Peso $BLOQUE::$(du -sh data/$ZONA | cut -f1) de productos; disco libre $(df -h . | tail -1 | awk '{print $4}')"
+          echo "::notice title=Etapas $MES::$(grep -E '^[0-9]+s (RTC|20[0-9]{2}-|S2|S1|bloque)' ard.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice title=Peso $MES::$(du -sh data/$ZONA | cut -f1) de productos; disco libre $(df -h . | tail -1 | awk '{print $4}')"
       - run: |
-          uv run cdcol resumen "$ZONA" --salida data --bloque "$BLOQUE" > resumen.md
-          grep '^| 20' resumen.md | while read -r fila; do echo "::notice title=ARD $BLOQUE::$fila"; done
+          for b in $(ls data/$ZONA/ard_s1s2_mensual/); do
+            fila=$(uv run cdcol resumen "$ZONA" --salida data --bloque "$b" | grep '^| 20')
+            echo "$b $fila"
+          done > resumen.txt
+          echo "::notice title=Resumen $MES::$(sed ':a;N;$!ba;s/\n/%0A/g' resumen.txt)"
       - uses: actions/upload-artifact@v4
         with:
-          name: ard-${{ env.ZONA }}-${{ matrix.bloque }}
+          name: ard-${{ env.ZONA }}-${{ matrix.mes }}
           path: data/
           retention-days: 3
