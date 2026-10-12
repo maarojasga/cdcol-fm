@@ -24,6 +24,8 @@ def preparar_dem(zona: Zona, pais: Pais, ruta: Path) -> Path:
     import rioxarray  # noqa: F401
 
     items = buscar(DEM_GLO30, zona)
+    if not items:
+        raise RuntimeError(f"No hay teselas GLO-30 para la zona {zona.id}")
     dem = odc.stac.load(
         items,
         bands=["data"],

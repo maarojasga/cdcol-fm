@@ -10,7 +10,11 @@ import typer
 from cdcol_fm import __version__
 from cdcol_fm.config import cargar_pais, listar_zonas
 
-app = typer.Typer(help="cdcol-fm: cubo de datos con modelos fundacionales.", no_args_is_help=True)
+app = typer.Typer(
+    help="cdcol-fm: cubo de datos con modelos fundacionales.",
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
 
 
 @app.command()

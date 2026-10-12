@@ -18,6 +18,7 @@ class Fuente:
     coleccion: str
     bandas: tuple[str, ...]
     firmar: bool = False  # Planetary Computer exige firmar los href (token SAS gratuito)
+    atemporal: bool = False  # p. ej. el DEM: una sola fecha, no se filtra por el rango de la zona
 
 
 S2_L2A = Fuente(
@@ -79,6 +80,7 @@ DEM_GLO30 = Fuente(
     coleccion="cop-dem-glo-30",
     bandas=("data",),
     firmar=True,
+    atemporal=True,
 )
 
 # Asset de Earth Search → nombre de banda en el producto ARD.
@@ -110,7 +112,7 @@ def buscar(fuente: Fuente, zona: Zona, max_items: int | None = None) -> list[Any
     busqueda = cliente.search(
         collections=[fuente.coleccion],
         bbox=list(zona.bbox),
-        datetime=f"{zona.fecha_inicio}/{zona.fecha_fin}",
+        datetime=None if fuente.atemporal else f"{zona.fecha_inicio}/{zona.fecha_fin}",
         max_items=max_items,
     )
     return list(busqueda.items())

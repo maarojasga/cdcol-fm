@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 60
     env:
       ZONA: ${{ inputs.zona || 'prueba' }}
+      NO_COLOR: "1"
       # Llaves S3 gratuitas de Copernicus Data Space. Sin ellas, S1 sale de Planetary Computer.
       CDSE_S3_ACCESS_KEY: ${{ secrets.CDSE_S3_ACCESS_KEY }}
       CDSE_S3_SECRET_KEY: ${{ secrets.CDSE_S3_SECRET_KEY }}
