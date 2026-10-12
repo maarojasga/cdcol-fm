@@ -60,6 +60,7 @@ def cargar_s1_cdse(
     from cdcol_fm.fuentes.cdse import descargar_safe, es_iw
 
     dem = preparar_dem(zona, pais, trabajo / "dem.tif")
+    avisar(f"DEM GLO-30 listo en {pais.grilla.crs}")
     capas = []
     for item in sorted((it for it in items if es_iw(it)), key=lambda it: it.datetime):
         safe = descargar_safe(item, trabajo / "safe")
