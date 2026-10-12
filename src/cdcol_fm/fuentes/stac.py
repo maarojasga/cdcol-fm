@@ -48,6 +48,14 @@ S1_RTC = Fuente(
     firmar=True,
 )
 
+# Solo para comparar cobertura: los assets de GRD en Earth Search son "requester pays".
+S1_GRD_ES = Fuente(
+    nombre="s1-grd",
+    url="https://earth-search.aws.element84.com/v1",
+    coleccion="sentinel-1-grd",
+    bandas=("vv", "vh"),
+)
+
 # Asset de Earth Search → nombre de banda en el producto ARD.
 RENOMBRE_S2 = {
     "blue": "B02",
