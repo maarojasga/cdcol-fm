@@ -1,11 +1,13 @@
 # ARD de una zona grande: un trabajo por mes. Cada trabajo corrige cada escena S1 una sola
 # vez para toda la zona y luego calcula los bloques (teselas de la grilla nacional).
-# En un PR corre enero de 2024 en 4 bloques de La Macarena, para medir tiempo y peso.
+# En un PR con la etiqueta "medir" corre enero de 2024 en 4 bloques de La Macarena.
 # A mano (Actions → "ARD por bloques" → Run workflow) se elige zona, meses y bloques.
 name: ARD por bloques
 on:
+  # Cada corrida son ~2,5 h de runner: en un PR solo corre si tiene la etiqueta "medir".
+  # Los cambios de código se prueban rápido en "ARD zona de prueba".
   pull_request:
-    paths: ["src/**", "pyproject.toml", "uv.lock", ".github/workflows/ard-bloques.yml"]
+    types: [opened, synchronize, labeled]
   workflow_dispatch:
     inputs:
       zona:
@@ -20,8 +22,13 @@ on:
       bloques:
         description: Bloques separados por coma; vacío = todos los de la zona
         default: ""
+# un push nuevo cancela la medición anterior del mismo PR
+concurrency:
+  group: ard-bloques-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   plan:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'medir')
     runs-on: ubuntu-latest
     outputs:
       meses: ${{ steps.lista.outputs.meses }}
