@@ -142,6 +142,23 @@ def resumen(
 
 
 @app.command()
+def vista(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    abrir: Annotated[bool, typer.Option(help="Abrir la página en el navegador")] = True,
+) -> None:
+    """Página HTML local para ver el ARD de una zona, mes por mes y capa por capa."""
+    import webbrowser
+
+    from cdcol_fm.ard.vista import generar_vista
+
+    ruta = generar_vista(salida, zona)
+    typer.echo(f"Vista: {ruta}")
+    if abrir:
+        webbrowser.open(ruta.resolve().as_uri())
+
+
+@app.command()
 def embeber(zona: str, receta: str) -> None:
     """Calcula el producto de embeddings de una receta sobre una zona."""
     _pendiente(2)

@@ -1,4 +1,4 @@
-.PHONY: instalar test lint cubo-local cubo-init cubo-borrar
+.PHONY: instalar test lint cubo-local cubo-init cubo-borrar prueba
 
 instalar:
 	uv sync
@@ -21,3 +21,9 @@ cubo-init:
 
 cubo-borrar:
 	docker compose -f infra/docker-compose.yml down -v
+
+# Atajos para correr en local
+prueba:
+	uv sync --extra cubo --extra radar
+	uv run cdcol ard prueba --s1 cdse
+	uv run cdcol vista prueba

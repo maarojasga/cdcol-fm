@@ -1,0 +1,12 @@
+# Correr sin instalar nada más que Docker:
+#   docker compose run --rm cdcol ard prueba --s1 cdse
+# Los productos quedan en ./data de este repositorio.
+services:
+  cdcol:
+    build: .
+    image: cdcol-fm
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/datos/data
