@@ -1,0 +1,13 @@
+# Verifica que la imagen de Docker (la forma fácil de correr en local) construya y arranque.
+name: Docker
+on:
+  pull_request:
+    paths: ["Dockerfile", "docker-compose.yml", "pyproject.toml", "uv.lock", "src/**", "config/**"]
+jobs:
+  imagen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose run --rm cdcol validar-config
+      - run: docker compose run --rm cdcol bloques macarena | head -1

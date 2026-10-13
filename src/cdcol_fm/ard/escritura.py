@@ -19,18 +19,25 @@ NODATA = {"uint8": 255, "uint16": 0, "float32": np.nan}
 NODATA_BANDA = {"dias_desde_clara": 65535}
 
 
+def carpeta_producto(destino: Path, zona: str, bloque: str | None = None) -> Path:
+    """``<destino>/<zona>/<producto>[/<bloque>]``; dentro, una carpeta por mes."""
+    base = destino / zona / PRODUCTO
+    return base / bloque if bloque else base
+
+
 def escribir_mes(
     mes: xr.Dataset,
     destino: Path,
     zona: str,
     ids_fuente: list[str],
     commit: str,
+    bloque: str | None = None,
 ) -> dict[str, Any]:
     """Escribe un mes del ARD y devuelve su ítem STAC (dict)."""
     import rioxarray  # noqa: F401  registra el accesor .rio
 
     fecha = str(np.datetime_as_string(mes["time"].values, unit="M"))
-    carpeta = destino / zona / PRODUCTO / fecha
+    carpeta = carpeta_producto(destino, zona, bloque) / fecha
     carpeta.mkdir(parents=True, exist_ok=True)
     assets: dict[str, Any] = {}
     for nombre in mes.data_vars:
@@ -53,7 +60,7 @@ def escribir_mes(
     item = {
         "type": "Feature",
         "stac_version": "1.0.0",
-        "id": f"{PRODUCTO}_{zona}_{fecha}",
+        "id": "_".join(p for p in (PRODUCTO, zona, bloque, fecha) if p),
         "bbox": [oeste, sur, este, norte],
         "geometry": {"type": "Polygon", "coordinates": [anillo]},
         "properties": {
@@ -61,6 +68,7 @@ def escribir_mes(
             "proj:code": str(mes.rio.crs),
             "cdcol:producto": PRODUCTO,
             "cdcol:zona": zona,
+            "cdcol:bloque": bloque,
             "processing:software": {"cdcol-fm": __version__},
             "cdcol:commit": commit,
             "cdcol:linaje": sorted(ids_fuente),

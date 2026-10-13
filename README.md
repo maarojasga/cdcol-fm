@@ -10,17 +10,64 @@ Es la continuación de CDCol (Uniandes + IDEAM, 2016-2021), uno de los primeros 
 
 ## Estado
 
-Fase 0: esqueleto. Nada procesa datos todavía.
+Fase 1: el cubo ARD mensual (Sentinel-2 + Sentinel-1 con corrección de relieve propia y capas de
+incertidumbre) ya corre de punta a punta. La zona piloto es La Macarena.
 
-## Empezar
+## Correr en tu computador
+
+Hay dos caminos. Ninguno necesita nube: los datos se bajan gratis de Earth Search, Planetary
+Computer y Copernicus, y los productos quedan en la carpeta `data/`.
+
+**1. Con Docker** (no hay que instalar Python; sirve en Windows, Mac y Linux):
 
 ```bash
-uv sync                    # entorno base
-uv run cdcol --help
-uv run pytest
-uv sync --extra cubo       # agrega Open Data Cube y STAC
-make cubo-local            # Postgres/PostGIS + datacube en Docker
+git clone https://github.com/maarojasga/cdcol-fm.git && cd cdcol-fm
+cp .env.ejemplo .env          # y pon ahí tus llaves de Copernicus (ver abajo)
+docker compose run --rm cdcol ard prueba --s1 cdse    # zona de prueba: ~5 min
+docker compose run --rm cdcol vista prueba            # escribe la página para verla
 ```
+
+Luego abre `data/prueba/vista/index.html` con doble clic.
+
+**2. Con uv** (si ya trabajas con Python):
+
+```bash
+uv sync --extra cubo --extra radar
+export CDSE_S3_ACCESS_KEY=...  CDSE_S3_SECRET_KEY=...
+uv run cdcol ard prueba --s1 cdse
+uv run cdcol vista prueba                             # abre el navegador
+```
+
+### Qué deberías ver
+
+La página tiene un botón por mes y uno por capa:
+
+| Capa | Qué es | Qué esperar |
+|---|---|---|
+| Color natural | Mediana del mes de Sentinel-2, sin nubes | Paisaje reconocible; manchas negras donde no hubo ni una vista clara |
+| Falso color | Infrarrojo, rojo, verde | Bosque y cultivos en rojo, suelo y pasto seco en verde-café |
+| Radar VV / VH | Sentinel-1 corregido por relieve | Imagen completa aunque haya nubes; laderas sin rayas por el relieve |
+| Observaciones válidas | Fechas sin nube por píxel | Pocas en meses lluviosos (febrero-marzo en el piloto) |
+| Nube | % de observaciones nubladas | Alto donde el óptico es poco confiable |
+| Días desde vista clara | Antigüedad del último dato limpio | Crece en temporada de lluvias |
+
+Cada mes también trae un `item.json` (STAC) con las escenas que usó, para reconstruirlo.
+
+### Zonas grandes
+
+Una zona grande se parte en bloques de 10 km y se calcula mes a mes; cada escena de radar se baja
+y se corrige una sola vez para toda la zona:
+
+```bash
+uv run cdcol bloques macarena                                  # 105 bloques
+uv run cdcol ard-mes macarena 2024-01                          # un mes, todos los bloques (~3 h)
+uv run cdcol ard-mes macarena 2024-01 --bloques x480_y182      # un mes, un bloque
+uv run cdcol vista macarena                                    # mosaico de los bloques
+```
+
+Los mismos comandos funcionan con `docker compose run --rm cdcol ...`.
+
+Para desarrollar: `uv sync --extra cubo --extra radar`, `make test` y `make lint`.
 
 ## Estructura
 
@@ -35,13 +82,10 @@ make cubo-local            # Postgres/PostGIS + datacube en Docker
 ## Credenciales de Copernicus
 
 El radar (Sentinel-1 GRD) se baja de Copernicus Data Space con llaves S3 gratuitas, que se generan en
-https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials ("Add credential"). Van como
-variables de entorno o secretos del repositorio, nunca en la config:
-
-```bash
-export CDSE_S3_ACCESS_KEY=...  CDSE_S3_SECRET_KEY=...
-uv run cdcol ard prueba --s1 cdse
-```
+https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials ("Add credential"). Van en
+el archivo `.env` (que nunca se sube a git), como variables de entorno o como secretos del
+repositorio; nunca en la config. Sin llaves, `--s1 pc` usa el radar ya corregido de Planetary
+Computer, que trae menos fechas.
 
 ## Ciclo de vida de una zona
 
