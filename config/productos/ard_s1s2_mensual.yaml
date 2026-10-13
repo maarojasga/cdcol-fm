@@ -64,12 +64,14 @@ measurements:
     dtype: uint16
     nodata: 65535
     units: '1'
-    # días desde la última observación óptica limpia
+    # días desde la última observación óptica limpia, buscada hasta 6 meses antes del
+    # inicio del mes (HISTORIA_MESES); 65535 si no hubo ninguna en esa ventana
   - name: prob_nube
     dtype: uint8
     nodata: 255
     units: '1'
-    # probabilidad media de nube (0-100)
+    # % de las observaciones ópticas del mes que la SCL marca como nube (0-100); es una
+    # fracción de observaciones, no la probabilidad de nube de Sen2Cor
   - name: n_adq_s1
     dtype: uint8
     nodata: 255

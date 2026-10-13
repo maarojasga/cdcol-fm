@@ -23,8 +23,11 @@ TROZO = 1024  # chunks por defecto de sarsen.terrain_correction
 VENTANA = 2048  # lado (px) de cada corrida de sarsen; acota la memoria
 
 
-def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path:
-    """Copernicus GLO-30 remuestreado a la grilla nacional y recortado a la zona."""
+def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> tuple[Path, list[Any]]:
+    """Copernicus GLO-30 remuestreado a la grilla nacional y recortado a la zona.
+
+    Devuelve la ruta y las teselas usadas, que van al linaje del producto (ADR 0001).
+    """
     import odc.stac
     import rioxarray  # noqa: F401
 
@@ -43,7 +46,7 @@ def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path
     )["data"].isel(time=0, drop=True)
     ruta.parent.mkdir(parents=True, exist_ok=True)
     dem.astype("float32").rio.to_raster(ruta)
-    return ruta
+    return ruta, items
 
 
 def rtc_escena(safe: Path, polarizacion: str, dem: Path, salida: Path) -> xr.DataArray:
@@ -66,6 +69,7 @@ class EscenaRTC:
 
     item: Any
     rutas: dict[str, Path]
+    dem: tuple[Any, ...] = ()  # teselas GLO-30 usadas en la corrección
 
 
 def geobox_zona(zona: Zona, pais: Pais) -> Any:
@@ -139,6 +143,7 @@ def rtc_escenas(
         ventanas = _ventanas(recorte, huella)
         safe = descargar_safe(item, trabajo / "safe")
         rutas = {}
+        teselas_dem: dict[str, Any] = {}
         for pol in ("VV", "VH"):
             ruta = trabajo / "rtc" / f"{item.id}_{pol}.tif"
             ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +163,8 @@ def rtc_escenas(
             }
             with rasterio.open(ruta, "w", **perfil) as destino:
                 for f, c, sub in ventanas:
-                    dem = preparar_dem(zona, pais, trabajo / "dem.tif", sub)
+                    dem, usadas = preparar_dem(zona, pais, trabajo / "dem.tif", sub)
+                    teselas_dem.update((t.id, t) for t in usadas)
                     parcial = trabajo / "parcial.tif"
                     rtc_escena(safe, pol, dem, parcial)
                     with rasterio.open(parcial) as fuente:
@@ -167,7 +173,8 @@ def rtc_escenas(
             rutas[pol] = ruta
         # el SAFE pesa ~1-2 GB: se borra apenas queda el gamma0 recortado
         shutil.rmtree(safe, ignore_errors=True)
-        salida.append(EscenaRTC(item, rutas))
+        dem_escena = tuple(teselas_dem[k] for k in sorted(teselas_dem))
+        salida.append(EscenaRTC(item, rutas, dem_escena))
         libre_gb = shutil.disk_usage(trabajo).free / 1e9
         alto, ancho = recorte.shape
         avisar(

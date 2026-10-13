@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cdcol_fm.ard.bloques import bloque as cargar_bloque
-from cdcol_fm.ard.bloques import recortar_zona
-from cdcol_fm.ard.compuesto import compuesto_mensual
+from cdcol_fm.ard.bloques import con_historia, recortar_zona
+from cdcol_fm.ard.compuesto import HISTORIA_MESES, compuesto_mensual
 from cdcol_fm.ard.escritura import carpeta_producto, escribir_mes
 from cdcol_fm.ciclo.manifiesto import ItemFuente, Manifiesto, Producto
 from cdcol_fm.config import RAIZ_CONFIG, cargar_pais, cargar_zona
@@ -41,6 +41,30 @@ def _mes(item: Any) -> str:
     return str(item.datetime.strftime("%Y-%m"))
 
 
+def _indice_mes(clave: str) -> int:
+    anio, mes = (int(p) for p in clave.split("-"))
+    return anio * 12 + mes - 1
+
+
+def _linaje_mes(
+    clave: str, items_s2: list[Any], items_s1: list[Any], dem_por_s1: dict[str, list[Any]]
+) -> list[str]:
+    """IDs que influyen en el mes ``clave``: S2 del mes y de su historia (dias_desde_clara),
+    S1 del mes y las teselas del DEM con que se corrigió ese S1."""
+    fin = _indice_mes(clave)
+    ids = {it.id for it in items_s2 if 0 <= fin - _indice_mes(_mes(it)) <= HISTORIA_MESES}
+    for it in items_s1:
+        if _mes(it) == clave:
+            ids.add(it.id)
+            ids.update(t.id for t in dem_por_s1.get(it.id, []))
+    return sorted(ids)
+
+
+def _dem_unico(dem_por_s1: dict[str, list[Any]]) -> list[Any]:
+    teselas = {t.id: t for lista in dem_por_s1.values() for t in lista}
+    return [teselas[k] for k in sorted(teselas)]
+
+
 def construir_ard(
     id_zona: str,
     destino: Path,
@@ -62,11 +86,13 @@ def construir_ard(
     geobox = bloque_.geobox() if bloque_ else None
     zona = recortar_zona(zona_completa, bloque_, desde, hasta)
 
-    items_s2 = buscar(S2_L2A, zona)
-    avisar(f"S2: {len(items_s2)} escenas")
+    # S2 desde HISTORIA_MESES antes: dias_desde_clara del primer mes mira los anteriores
+    items_s2 = buscar(S2_L2A, con_historia(zona, HISTORIA_MESES))
+    avisar(f"S2: {len(items_s2)} escenas (con {HISTORIA_MESES} meses de historia)")
     if not items_s2:
         raise RuntimeError(f"no hay escenas S2 para {id_zona}")
     s2 = cargar_s2(items_s2, zona, pais, geobox)
+    dem_por_s1: dict[str, list[Any]] = {}
     if fuente_s1 == "cdse":
         from cdcol_fm.ard.rtc import rtc_escenas, s1_en_grilla
         from cdcol_fm.fuentes.cdse import es_iw
@@ -81,7 +107,9 @@ def construir_ard(
             escenas = escenas_s1
         s1 = s1_en_grilla(escenas, s2.odc.geobox) if escenas else None
         if s1 is not None:
-            items_s1 = [e.item for e in escenas if e.item.datetime.date() in _dias(s1)]
+            usadas = [e for e in escenas if e.item.datetime.date() in _dias(s1)]
+            items_s1 = [e.item for e in usadas]
+            dem_por_s1 = {e.item.id: list(e.dem) for e in usadas}
             # misma grilla que S2 por construcción; esto solo absorbe redondeos de coordenadas
             tol = pais.grilla.resolucion_m / 2
             s1 = s1.reindex(x=s2["x"], y=s2["y"], method="nearest", tolerance=tol)
@@ -95,14 +123,15 @@ def construir_ard(
         s1 = cargar_s1(items_s1, zona, pais, geobox) if items_s1 else None
     else:
         raise ValueError(f"fuente_s1 desconocida: {fuente_s1}")
-    ard = compuesto_mensual(s2, s1).compute()
+    # los meses de historia solo alimentan dias_desde_clara; no se escriben
+    ard = compuesto_mensual(s2, s1).sel(time=slice(f"{zona.fecha_inicio[:7]}-01", None)).compute()
 
     commit = _commit()
     productos = []
     for i in range(ard.sizes["time"]):
         mes = ard.isel(time=i)
         clave = str(mes["time"].values)[:7]
-        ids = [it.id for it in items_s2 + items_s1 if _mes(it) == clave]
+        ids = _linaje_mes(clave, items_s2, items_s1, dem_por_s1)
         item = escribir_mes(mes, destino, id_zona, ids, commit, id_bloque)
         ruta_item = carpeta_producto(destino, id_zona, id_bloque) / clave / "item.json"
         productos.append(
@@ -118,7 +147,7 @@ def construir_ard(
         sha256_lockfile=sha256_archivo(lock) if lock.exists() else "",
         items_fuente=[
             ItemFuente(coleccion=it.collection_id, id=it.id, href=it.get_self_href() or "")
-            for it in items_s2 + items_s1
+            for it in items_s2 + items_s1 + _dem_unico(dem_por_s1)
         ],
         productos=productos,
     )

@@ -91,3 +91,14 @@ def recortar_zona(
         ultimo = calendar.monthrange(anio, mes)[1]
         cambios["fecha_fin"] = min(zona.fecha_fin, f"{hasta}-{ultimo:02d}")
     return Zona.model_validate({**zona.model_dump(), **cambios})
+
+
+def con_historia(zona: Zona, meses: int) -> Zona:
+    """La zona con ``fecha_inicio`` corrida ``meses`` hacia atrás (al día 1 de ese mes).
+
+    Para S2: ``dias_desde_clara`` de un mes mira las observaciones de los meses anteriores.
+    """
+    anio, mes = (int(p) for p in zona.fecha_inicio[:7].split("-"))
+    total = anio * 12 + (mes - 1) - meses
+    inicio = f"{total // 12:04d}-{total % 12 + 1:02d}-01"
+    return Zona.model_validate({**zona.model_dump(), "fecha_inicio": inicio})

@@ -1,6 +1,6 @@
 import pytest
 
-from cdcol_fm.ard.bloques import bloque, bloques_de_zona, recortar_zona
+from cdcol_fm.ard.bloques import bloque, bloques_de_zona, con_historia, recortar_zona
 from cdcol_fm.config import cargar_pais, cargar_zona
 
 PAIS = cargar_pais("colombia")
@@ -40,3 +40,11 @@ def test_recortar_zona_por_bloque_y_meses() -> None:
     assert este - oeste < 0.2 and norte - sur < 0.2
     # sin argumentos no cambia nada
     assert recortar_zona(zona) == zona
+
+
+def test_con_historia_corre_el_inicio_y_cruza_el_anio() -> None:
+    zona = recortar_zona(cargar_zona("macarena"), None, "2024-03", "2024-03")
+    con = con_historia(zona, 6)
+    assert con.fecha_inicio == "2023-09-01"
+    assert con.fecha_fin == zona.fecha_fin == "2024-03-31"
+    assert con_historia(zona, 0).fecha_inicio == "2024-03-01"
