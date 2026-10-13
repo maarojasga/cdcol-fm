@@ -11,3 +11,5 @@ jobs:
       - run: docker compose build
       - run: docker compose run --rm cdcol validar-config
       - run: docker compose run --rm cdcol bloques macarena | head -1
+      # importa las librerías con partes en C (rasterio/GDAL, sarsen), que es donde falla una imagen
+      - run: docker compose run --rm --entrypoint python cdcol -c "import rasterio, sarsen, odc.stac; print(rasterio.__gdal_version__)"

@@ -2,6 +2,10 @@
 #   docker compose run --rm cdcol ard prueba --s1 cdse
 FROM python:3.12-slim
 
+# rasterio trae GDAL en su wheel, pero necesita libexpat del sistema (la imagen slim no la trae)
+RUN apt-get update && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:0.8.17 /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
 
