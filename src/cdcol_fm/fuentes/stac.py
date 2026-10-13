@@ -18,6 +18,7 @@ class Fuente:
     coleccion: str
     bandas: tuple[str, ...]
     firmar: bool = False  # Planetary Computer exige firmar los href (token SAS gratuito)
+    atemporal: bool = False  # p. ej. el DEM: una sola fecha, no se filtra por el rango de la zona
 
 
 S2_L2A = Fuente(
@@ -64,6 +65,24 @@ S1_GRD_PC = Fuente(
     firmar=True,
 )
 
+# Fuente elegida por Ale (12-oct-2026) para S1: GRD completo desde Copernicus Data Space.
+# El catálogo es público; los datos (s3://eodata) requieren llaves S3 gratuitas de CDSE.
+S1_GRD_CDSE = Fuente(
+    nombre="s1-cdse",
+    url="https://stac.dataspace.copernicus.eu/v1",
+    coleccion="sentinel-1-grd",
+    bandas=("vv", "vh"),
+)
+
+DEM_GLO30 = Fuente(
+    nombre="dem",
+    url="https://planetarycomputer.microsoft.com/api/stac/v1",
+    coleccion="cop-dem-glo-30",
+    bandas=("data",),
+    firmar=True,
+    atemporal=True,
+)
+
 # Asset de Earth Search → nombre de banda en el producto ARD.
 RENOMBRE_S2 = {
     "blue": "B02",
@@ -93,7 +112,7 @@ def buscar(fuente: Fuente, zona: Zona, max_items: int | None = None) -> list[Any
     busqueda = cliente.search(
         collections=[fuente.coleccion],
         bbox=list(zona.bbox),
-        datetime=f"{zona.fecha_inicio}/{zona.fecha_fin}",
+        datetime=None if fuente.atemporal else f"{zona.fecha_inicio}/{zona.fecha_fin}",
         max_items=max_items,
     )
     return list(busqueda.items())

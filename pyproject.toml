@@ -23,6 +23,11 @@ cubo = [
     "rioxarray>=0.15",
     "planetary-computer>=1.0",
 ]
+# Radar desde Copernicus Data Space: GRD + corrección de relieve propia (sarsen).
+radar = [
+    "sarsen>=0.9",
+    "boto3>=1.34",
+]
 # Índice ODC (caché desechable, ADR 0001). Necesita Postgres y pg_config para psycopg2.
 indice = [
     "datacube[postgres]>=1.9",

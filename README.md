@@ -32,6 +32,17 @@ make cubo-local            # Postgres/PostGIS + datacube en Docker
 | `infra/` | Cubo local para desarrollo. |
 | `experimentos/` | Un directorio por experimento de la tesis. |
 
+## Credenciales de Copernicus
+
+El radar (Sentinel-1 GRD) se baja de Copernicus Data Space con llaves S3 gratuitas, que se generan en
+https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials ("Add credential"). Van como
+variables de entorno o secretos del repositorio, nunca en la config:
+
+```bash
+export CDSE_S3_ACCESS_KEY=...  CDSE_S3_SECRET_KEY=...
+uv run cdcol ard prueba --s1 cdse
+```
+
 ## Ciclo de vida de una zona
 
 Los datos de una zona existen solo mientras un proyecto la usa. `cdcol archivar <zona>` borra los productos y deja en git la configuración y un manifiesto con lo que realmente se usó, y `cdcol reconstruir <zona>` lo rehace. Ver [ADR 0003](docs/adr/0003-ciclo-de-vida-de-zonas.md).

@@ -10,7 +10,11 @@ import typer
 from cdcol_fm import __version__
 from cdcol_fm.config import cargar_pais, listar_zonas
 
-app = typer.Typer(help="cdcol-fm: cubo de datos con modelos fundacionales.", no_args_is_help=True)
+app = typer.Typer(
+    help="cdcol-fm: cubo de datos con modelos fundacionales.",
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
 
 
 @app.command()
@@ -44,11 +48,15 @@ def _pendiente(fase: int) -> None:
 def ard(
     zona: str,
     salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    s1: Annotated[
+        str,
+        typer.Option(help="pc: RTC de Planetary Computer; cdse: GRD de Copernicus + RTC"),
+    ] = "pc",
 ) -> None:
     """Calcula el producto ard_s1s2_mensual con sus capas de incertidumbre."""
     from cdcol_fm.ard.pipeline import construir_ard
 
-    manifiesto = construir_ard(zona, salida, avisar=typer.echo)
+    manifiesto = construir_ard(zona, salida, avisar=typer.echo, fuente_s1=s1)
     ruta = salida / zona / "manifiesto.json"
     manifiesto.guardar(ruta)
     typer.echo(f"Manifiesto: {ruta}")
@@ -60,10 +68,10 @@ def escenas(zona: str) -> None:
     from collections import Counter
 
     from cdcol_fm.config import cargar_zona
-    from cdcol_fm.fuentes.stac import S1_GRD_ES, S1_GRD_PC, S1_RTC, S2_L2A, buscar
+    from cdcol_fm.fuentes.stac import S1_GRD_CDSE, S1_GRD_ES, S1_GRD_PC, S1_RTC, S2_L2A, buscar
 
     z = cargar_zona(zona)
-    for fuente in (S2_L2A, S1_RTC, S1_GRD_PC, S1_GRD_ES):
+    for fuente in (S2_L2A, S1_RTC, S1_GRD_PC, S1_GRD_ES, S1_GRD_CDSE):
         items = buscar(fuente, z)
         por_mes = Counter(it.datetime.strftime("%Y-%m") for it in items)
         fechas = sorted({it.datetime.strftime("%m-%d") for it in items})

@@ -15,15 +15,28 @@ jobs:
     timeout-minutes: 60
     env:
       ZONA: ${{ inputs.zona || 'prueba' }}
+      NO_COLOR: "1"
+      # Llaves S3 gratuitas de Copernicus Data Space. Sin ellas, S1 sale de Planetary Computer.
+      CDSE_S3_ACCESS_KEY: ${{ secrets.CDSE_S3_ACCESS_KEY }}
+      CDSE_S3_SECRET_KEY: ${{ secrets.CDSE_S3_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --locked --extra cubo
+      - run: uv sync --locked --extra cubo --extra radar
       - run: |
           uv run cdcol escenas "$ZONA" | while read -r fila; do echo "::notice title=Escenas $ZONA::$fila"; done
-      - run: uv run cdcol ard "$ZONA" --salida data
+      - run: |
+          if [ -n "$CDSE_S3_ACCESS_KEY" ]; then FUENTE=cdse; else FUENTE=pc; fi
+          echo "::notice title=ARD $ZONA::S1 desde $FUENTE"
+          set -o pipefail
+          # si falla, las últimas líneas salen como anotaciones (los logs no se leen desde la API)
+          uv run cdcol ard "$ZONA" --salida data --s1 "$FUENTE" 2>&1 | tee ard.log || {
+            # una sola anotación (GitHub limita a 10 errores por paso); %0A es salto de línea
+            echo "::error title=ARD $ZONA::$(grep -vE 'sys.excepthook|Original exception was|^\s*$' ard.log | tail -n 40 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
       - run: |
           echo "## ARD de la zona $ZONA" >> "$GITHUB_STEP_SUMMARY"
           uv run cdcol resumen "$ZONA" --salida data | tee -a "$GITHUB_STEP_SUMMARY" > resumen.md
