@@ -1,1 +1,1 @@
-"""Fuentes STAC: S2 L2A (Earth Search), S1 RTC (Planetary Computer), DEM. Fase 1."""
+"""Fuentes STAC: S2 L2A (Earth Search) y S1 RTC (Planetary Computer)."""

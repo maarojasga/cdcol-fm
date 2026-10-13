@@ -1,0 +1,37 @@
+# Corre el ARD con datos reales (Earth Search + Planetary Computer) sobre una zona pequeña.
+# Los productos quedan como artefacto del run; no se guardan en ningún bucket.
+name: ARD zona de prueba
+on:
+  pull_request:
+    paths: ["src/**", "config/**", "pyproject.toml", "uv.lock", ".github/workflows/zona-prueba.yml"]
+  workflow_dispatch:
+    inputs:
+      zona:
+        description: Zona de config/zonas/
+        default: prueba
+jobs:
+  ard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ZONA: ${{ inputs.zona || 'prueba' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra cubo
+      - run: |
+          uv run cdcol escenas "$ZONA" | while read -r fila; do echo "::notice title=Escenas $ZONA::$fila"; done
+      - run: uv run cdcol ard "$ZONA" --salida data
+      - run: |
+          echo "## ARD de la zona $ZONA" >> "$GITHUB_STEP_SUMMARY"
+          uv run cdcol resumen "$ZONA" --salida data | tee -a "$GITHUB_STEP_SUMMARY" > resumen.md
+          # también como anotaciones, legibles desde la API de checks
+          grep '^| 20' resumen.md | while read -r fila; do echo "::notice title=ARD $ZONA::$fila"; done
+          echo "::notice title=ARD $ZONA escenas::$(uv run python -c "import json;m=json.load(open('data/$ZONA/manifiesto.json'));print(len(m['items_fuente']),'escenas fuente,',len(m['productos']),'meses')")"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ard-${{ env.ZONA }}
+          path: data/
+          retention-days: 7

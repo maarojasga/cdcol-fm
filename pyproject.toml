@@ -12,17 +12,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Cubo: ODC upstream sin forks (ADR 0002). Pesado; no hace falta para la CI básica.
+# Cubo: ODC upstream sin forks (ADR 0002). Carga y procesa desde STAC, sin base de datos.
 cubo = [
-    "datacube[postgres]>=1.9",
     "odc-stac>=0.4",
     "odc-geo>=0.4",
-    "odc-apps-dc-tools>=1.9",
     "pystac>=1.10",
     "pystac-client>=0.8",
     "xarray>=2024.6",
     "dask[array]>=2024.6",
     "rioxarray>=0.15",
+    "planetary-computer>=1.0",
+]
+# Índice ODC (caché desechable, ADR 0001). Necesita Postgres y pg_config para psycopg2.
+indice = [
+    "datacube[postgres]>=1.9",
+    "odc-apps-dc-tools>=1.9",
 ]
 # Modelos: se agregan en la fase 2.
 modelos = [
