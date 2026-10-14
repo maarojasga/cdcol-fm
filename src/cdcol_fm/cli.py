@@ -159,6 +159,37 @@ def vista(
 
 
 @app.command()
+def experimento(
+    id_exp: Annotated[str, typer.Argument(help="Id del experimento, p. ej. e01")],
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    solo_validar: Annotated[
+        bool, typer.Option("--solo-validar", help="Solo revisa el config (pre-registro)")
+    ] = False,
+) -> None:
+    """Corre un experimento pre-registrado de experimentos/ y escribe su veredicto."""
+    from cdcol_fm.bench.experimento import cargar_experimento
+
+    exp = cargar_experimento(id_exp)
+    if solo_validar:
+        typer.echo(f"OK: {exp.id} ({len(exp.brazos)} brazos, {len(exp.bloques)} bloques)")
+        return
+
+    from cdcol_fm.bench.correr import cargar_datos, evaluar, guardar, veredicto
+    from cdcol_fm.config import RAIZ_CONFIG
+
+    datos = cargar_datos(exp, salida, RAIZ_CONFIG.parent)
+    sin_datos = [b.id for b in exp.brazos if b.id not in datos.rasgos]
+    if sin_datos:
+        typer.echo(f"Sin datos, no corren: {', '.join(sin_datos)}", err=True)
+    filas, preds = evaluar(exp, datos)
+    texto, _ = veredicto(exp, preds)
+    carpeta = salida / "experimentos" / exp.id
+    guardar(exp, filas, texto, datos, carpeta)
+    typer.echo(texto)
+    typer.echo(f"Resultados: {carpeta}")
+
+
+@app.command()
 def embeber(zona: str, receta: str) -> None:
     """Calcula el producto de embeddings de una receta sobre una zona."""
     _pendiente(2)

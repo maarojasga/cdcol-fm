@@ -33,6 +33,10 @@ indice = [
     "datacube[postgres]>=1.9",
     "odc-apps-dc-tools>=1.9",
 ]
+# Experimentos (experimentos/): los clasificadores de los brazos.
+bench = [
+    "scikit-learn>=1.4",
+]
 # Modelos: se agregan en la fase 2.
 modelos = [
     "torch>=2.3",

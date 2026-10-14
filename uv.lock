@@ -508,6 +508,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+bench = [
+    { name = "scikit-learn" },
+]
 cubo = [
     { name = "dask", extra = ["array"] },
     { name = "odc-geo" },
@@ -559,12 +562,13 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6" },
     { name = "rioxarray", marker = "extra == 'cubo'", specifier = ">=0.15" },
     { name = "sarsen", marker = "extra == 'radar'", specifier = ">=0.9" },
+    { name = "scikit-learn", marker = "extra == 'bench'", specifier = ">=1.4" },
     { name = "terratorch", marker = "extra == 'modelos'", specifier = ">=1.0" },
     { name = "torch", marker = "extra == 'modelos'", specifier = ">=2.3" },
     { name = "typer", specifier = ">=0.12" },
     { name = "xarray", marker = "extra == 'cubo'", specifier = ">=2024.6" },
 ]
-provides-extras = ["cubo", "radar", "indice", "modelos"]
+provides-extras = ["cubo", "radar", "indice", "bench", "modelos"]
 
 [package.metadata.requires-dev]
 dev = [

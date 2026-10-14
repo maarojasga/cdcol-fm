@@ -13,6 +13,10 @@ Es la continuación de CDCol (Uniandes + IDEAM, 2016-2021), uno de los primeros 
 Fase 1: el cubo ARD mensual (Sentinel-2 + Sentinel-1 con corrección de relieve propia y capas de
 incertidumbre) ya corre de punta a punta. La zona piloto es La Macarena.
 
+El primer experimento de la tesis está pre-registrado en
+[`experimentos/e01-degradacion-tropical`](experimentos/e01-degradacion-tropical/): el brazo
+local corre; el brazo con el modelo fundacional espera la fase 2.
+
 ## Correr en tu computador
 
 Hay dos caminos. Ninguno necesita nube: los datos se bajan gratis de Earth Search, Planetary
