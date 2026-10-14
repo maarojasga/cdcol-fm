@@ -1,4 +1,4 @@
-.PHONY: instalar test lint cubo-local cubo-init cubo-borrar
+.PHONY: instalar test lint cubo-local cubo-init cubo-borrar prueba
 
 instalar:
 	uv sync
@@ -15,9 +15,15 @@ cubo-local:
 	docker compose -f infra/docker-compose.yml up -d
 
 cubo-init:
-	uv sync --extra cubo
+	uv sync --extra cubo --extra indice
 	ODC_CONFIG_PATH=infra/datacube.conf uv run datacube system init
 	ODC_CONFIG_PATH=infra/datacube.conf uv run datacube product add config/productos/ard_s1s2_mensual.yaml
 
 cubo-borrar:
 	docker compose -f infra/docker-compose.yml down -v
+
+# Atajos para correr en local
+prueba:
+	uv sync --extra cubo --extra radar
+	uv run cdcol ard prueba --s1 cdse
+	uv run cdcol vista prueba

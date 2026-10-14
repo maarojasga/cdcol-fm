@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Annotated
+
 import typer
 
 from cdcol_fm import __version__
 from cdcol_fm.config import cargar_pais, listar_zonas
 
-app = typer.Typer(help="cdcol-fm: cubo de datos con modelos fundacionales.", no_args_is_help=True)
+app = typer.Typer(
+    help="cdcol-fm: cubo de datos con modelos fundacionales.",
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
 
 
 @app.command()
@@ -38,15 +45,117 @@ def _pendiente(fase: int) -> None:
 
 
 @app.command()
-def ingestar(zona: str) -> None:
-    """Busca S1/S2 en STAC e indexa los ítems de la zona en ODC."""
-    _pendiente(1)
+def ard(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    s1: Annotated[
+        str,
+        typer.Option(help="pc: RTC de Planetary Computer; cdse: GRD de Copernicus + RTC"),
+    ] = "pc",
+    bloque: Annotated[
+        str | None, typer.Option(help="Solo este bloque (x<col>_y<fila>); ver `cdcol bloques`")
+    ] = None,
+    desde: Annotated[str | None, typer.Option(help="Primer mes, AAAA-MM")] = None,
+    hasta: Annotated[str | None, typer.Option(help="Último mes, AAAA-MM")] = None,
+) -> None:
+    """Calcula el producto ard_s1s2_mensual con sus capas de incertidumbre."""
+    from cdcol_fm.ard.pipeline import construir_ard
+
+    manifiesto = construir_ard(
+        zona, salida, avisar=typer.echo, fuente_s1=s1, id_bloque=bloque, desde=desde, hasta=hasta
+    )
+    partes = [p for p in (bloque, desde, hasta) if p]
+    ruta = salida / zona / ("manifiesto" + "".join(f"_{p}" for p in partes) + ".json")
+    manifiesto.guardar(ruta)
+    typer.echo(f"Manifiesto: {ruta}")
+
+
+@app.command("ard-mes")
+def ard_mes(
+    zona: str,
+    mes: Annotated[str, typer.Argument(help="AAAA-MM")],
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    bloques: Annotated[
+        str | None, typer.Option(help="Bloques separados por coma; por defecto, todos")
+    ] = None,
+) -> None:
+    """Un mes de la zona por bloques, corrigiendo cada escena S1 de CDSE una sola vez."""
+    from cdcol_fm.ard.pipeline import construir_ard_mes
+
+    ids = [b.strip() for b in bloques.split(",")] if bloques else None
+    for id_bloque, manifiesto in construir_ard_mes(zona, salida, mes, ids, typer.echo).items():
+        manifiesto.guardar(salida / zona / f"manifiesto_{id_bloque}_{mes}.json")
+    typer.echo(f"{mes}: listo")
 
 
 @app.command()
-def ard(zona: str) -> None:
-    """Calcula el producto ard_s1s2_mensual con sus capas de incertidumbre."""
-    _pendiente(1)
+def bloques(
+    zona: str,
+    json_: Annotated[
+        bool, typer.Option("--json", help="Lista JSON (para una matriz de CI)")
+    ] = False,
+) -> None:
+    """Bloques de la grilla nacional que cubren la zona."""
+    import json
+
+    from cdcol_fm.ard.bloques import bloques_de_zona
+    from cdcol_fm.config import cargar_zona
+
+    z = cargar_zona(zona)
+    lista = bloques_de_zona(z, cargar_pais(z.pais))
+    if json_:
+        typer.echo(json.dumps([b.id for b in lista]))
+        return
+    lado_km = lista[0].lado_m / 1000 if lista else 0
+    typer.echo(f"{zona}: {len(lista)} bloques de {lado_km:g} km")
+    for b in lista:
+        typer.echo(b.id)
+
+
+@app.command()
+def escenas(zona: str) -> None:
+    """Cuenta las escenas S2 y S1 de la zona por mes y fecha (para revisar cobertura)."""
+    from collections import Counter
+
+    from cdcol_fm.config import cargar_zona
+    from cdcol_fm.fuentes.stac import S1_GRD_CDSE, S1_GRD_ES, S1_GRD_PC, S1_RTC, S2_L2A, buscar
+
+    z = cargar_zona(zona)
+    for fuente in (S2_L2A, S1_RTC, S1_GRD_PC, S1_GRD_ES, S1_GRD_CDSE):
+        items = buscar(fuente, z)
+        por_mes = Counter(it.datetime.strftime("%Y-%m") for it in items)
+        fechas = sorted({it.datetime.strftime("%m-%d") for it in items})
+        conteo = dict(sorted(por_mes.items()))
+        typer.echo(f"{fuente.nombre} {fuente.coleccion}: {conteo} fechas={fechas}")
+
+
+@app.command()
+def resumen(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    bloque: Annotated[str | None, typer.Option(help="Bloque, si se calculó por bloques")] = None,
+) -> None:
+    """Tabla por mes de las capas de incertidumbre de una zona ya calculada."""
+    from cdcol_fm.ard.resumen import resumen_markdown
+
+    typer.echo(resumen_markdown(salida, zona, bloque))
+
+
+@app.command()
+def vista(
+    zona: str,
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    abrir: Annotated[bool, typer.Option(help="Abrir la página en el navegador")] = True,
+) -> None:
+    """Página HTML local para ver el ARD de una zona, mes por mes y capa por capa."""
+    import webbrowser
+
+    from cdcol_fm.ard.vista import generar_vista
+
+    ruta = generar_vista(salida, zona)
+    typer.echo(f"Vista: {ruta}")
+    if abrir:
+        webbrowser.open(ruta.resolve().as_uri())
 
 
 @app.command()

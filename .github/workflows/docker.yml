@@ -1,0 +1,15 @@
+# Verifica que la imagen de Docker (la forma fácil de correr en local) construya y arranque.
+name: Docker
+on:
+  pull_request:
+    paths: ["Dockerfile", "docker-compose.yml", "pyproject.toml", "uv.lock", "src/**", "config/**"]
+jobs:
+  imagen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose run --rm cdcol validar-config
+      - run: docker compose run --rm cdcol bloques macarena | head -1
+      # importa las librerías con partes en C (rasterio/GDAL, sarsen), que es donde falla una imagen
+      - run: docker compose run --rm --entrypoint python cdcol -c "import rasterio, sarsen, odc.stac; print(rasterio.__gdal_version__)"
