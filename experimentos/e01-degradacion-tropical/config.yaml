@@ -6,7 +6,7 @@ zona: macarena
 anio: 2024
 # Bloques de la grilla nacional. Los elige `cdcol elegir-bloques e01 --escribir` con la regla
 # del README (sección "Elección de bloques"); no se editan a mano. Con menos de 2 × pliegues no corre.
-bloques: []
+bloques: [x477_y177, x477_y187, x478_y187, x479_y177, x479_y182, x479_y184, x479_y188, x480_y182, x480_y186, x480_y187, x481_y176, x481_y177, x481_y183, x481_y184, x481_y188]
 
 tarea: bosque-no-bosque
 clases: {0: no-bosque, 1: bosque}
