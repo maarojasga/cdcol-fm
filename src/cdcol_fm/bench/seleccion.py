@@ -55,6 +55,14 @@ def elegir(
     return sorted(elegidos, key=lambda c: c.id)
 
 
+def anio_item(item: Any) -> int:
+    """Año de un ítem STAC. WorldCover no trae ``datetime``, sino ``start_datetime``."""
+    fecha = item.datetime or item.common_metadata.start_datetime
+    if fecha is None:
+        raise ValueError(f"el ítem {item.id} no tiene fecha")
+    return int(fecha.year)
+
+
 def candidatos_worldcover(zona: Zona, pais: Pais) -> list[Candidato]:
     """Fracción de bosque y de área dentro de la zona de cada bloque (red: Planetary Computer)."""
     import odc.stac
@@ -66,8 +74,8 @@ def candidatos_worldcover(zona: Zona, pais: Pais) -> list[Candidato]:
     items = buscar(WORLDCOVER, zona)
     if not items:
         raise RuntimeError(f"no hay WorldCover para {zona.id}")
-    ultimo = max(it.datetime.year for it in items)
-    items = [it for it in items if it.datetime.year == ultimo]
+    ultimo = max(anio_item(it) for it in items)
+    items = [it for it in items if anio_item(it) == ultimo]
     huella = box(*zona.bbox, "EPSG:4326").to_crs(pais.grilla.crs)
     salida = []
     for b in bloques_de_zona(zona, pais):

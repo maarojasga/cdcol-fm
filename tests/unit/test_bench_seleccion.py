@@ -1,7 +1,7 @@
 import pytest
 
 from cdcol_fm.ard.bloques import bloques_de_zona
-from cdcol_fm.bench.seleccion import REDUCCION, Candidato, elegir
+from cdcol_fm.bench.seleccion import REDUCCION, Candidato, anio_item, elegir
 from cdcol_fm.config import cargar_pais, cargar_zona
 
 
@@ -39,3 +39,23 @@ def test_grilla_resumida_del_bloque() -> None:
     gb = b.geobox().zoom_out(REDUCCION)
     assert gb.shape == (1024 // REDUCCION, 1024 // REDUCCION)
     assert gb.extent.boundingbox.left == pytest.approx(b.limites[0])
+
+
+def test_anio_de_items_con_rango_de_fechas() -> None:
+    """Como WorldCover: datetime nulo y start_datetime/end_datetime."""
+    from datetime import UTC, datetime
+
+    import pystac
+
+    def item(anio: int) -> pystac.Item:
+        return pystac.Item(
+            id=f"ESA_WorldCover_10m_{anio}",
+            geometry=None,
+            bbox=None,
+            datetime=None,
+            properties={},
+            start_datetime=datetime(anio, 1, 1, tzinfo=UTC),
+            end_datetime=datetime(anio, 12, 31, tzinfo=UTC),
+        )
+
+    assert [anio_item(item(a)) for a in (2020, 2021)] == [2020, 2021]
