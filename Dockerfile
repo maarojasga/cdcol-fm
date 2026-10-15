@@ -15,6 +15,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --locked --no-dev --extra cubo --extra radar --extra bench --no-install-project
 COPY src ./src
 COPY config ./config
+COPY experimentos ./experimentos
 RUN uv sync --locked --no-dev --extra cubo --extra radar --extra bench
 
 # los productos se escriben en /datos, que se monta desde el computador

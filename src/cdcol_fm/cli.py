@@ -175,9 +175,9 @@ def experimento(
         return
 
     from cdcol_fm.bench.correr import cargar_datos, evaluar, guardar, veredicto
-    from cdcol_fm.config import RAIZ_CONFIG
 
-    datos = cargar_datos(exp, salida, RAIZ_CONFIG.parent)
+    # rutas relativas del config (la referencia) desde donde se corre: en Docker, /datos
+    datos = cargar_datos(exp, salida, Path.cwd())
     sin_datos = [b.id for b in exp.brazos if b.id not in datos.rasgos]
     if sin_datos:
         typer.echo(f"Sin datos, no corren: {', '.join(sin_datos)}", err=True)

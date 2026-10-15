@@ -10,3 +10,5 @@ services:
         required: false
     volumes:
       - ./data:/datos/data
+      # los experimentos se leen y se escriben (p. ej. elegir-bloques --escribir) en el repo
+      - ./experimentos:/app/experimentos
