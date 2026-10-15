@@ -4,8 +4,8 @@ id: e01
 nombre: Degradación tropical de un modelo fundacional global
 zona: macarena
 anio: 2024
-# Bloques de la grilla nacional (cdcol bloques macarena). Se fijan al congelar el ARD; deben
-# incluir bosque, borde agrícola y pasto. Con menos de 2 × pliegues no corre.
+# Bloques de la grilla nacional. Los elige `cdcol elegir-bloques e01 --escribir` con la regla
+# del README (sección "Elección de bloques"); no se editan a mano. Con menos de 2 × pliegues no corre.
 bloques: []
 
 tarea: bosque-no-bosque

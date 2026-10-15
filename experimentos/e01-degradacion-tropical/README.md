@@ -39,6 +39,19 @@ Las capas de incertidumbre del cubo **no** entran como rasgos del brazo local: s
 estratificar. Si entraran, la comparación mezclaría dos cosas (cubo con incertidumbre vs. modelo
 fundacional) y no se podría decir cuál explica la brecha. Eso es el experimento 2.
 
+## Elección de bloques
+
+Regla fija (`src/cdcol_fm/bench/seleccion.py`), aplicada por `cdcol elegir-bloques e01`:
+
+1. Solo bloques enteros dentro de la zona (65 de los 105 de La Macarena).
+2. Solo bloques mixtos: entre 15 % y 85 % de bosque según ESA WorldCover 2021. Cada bloque aporta
+   las dos clases y bordes reales.
+3. Los elegibles se ordenan de sur a norte, se parten en 5 franjas iguales y de cada una se toman
+   3 al azar con semilla 0: 15 bloques que recorren serranía, piedemonte y llanura.
+
+WorldCover se usa solo para elegir: es independiente de la referencia (MapBiomas) y no mira
+resultados. La tabla completa queda en `bloques.csv`.
+
 ## Criterio de decisión (fijado antes de ver datos)
 
 `brecha = exactitud(fundacional) − exactitud(local)`, con 100 etiquetas por clase, promediada
@@ -68,7 +81,8 @@ presupuesto × estrato) y `veredicto.md`.
 
 ## Pendiente antes de correrlo de verdad
 
-1. **Fijar los bloques.** 10 a 20 bloques con bosque, borde agrícola y pasto.
+1. **Fijar los bloques.** `cdcol elegir-bloques e01 --escribir` (necesita red) y commit de
+   `config.yaml` y `bloques.csv`.
 2. **Referencia.** Bajar MapBiomas Colombia (colección que cubra 2024), recortarla a la zona y
    confirmar la reclasificación de `config.yaml` contra su leyenda.
 3. **Puntos independientes.** MapBiomas es a su vez un modelo (Landsat, 30 m): sirve para
