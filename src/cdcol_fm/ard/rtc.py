@@ -141,6 +141,9 @@ def rtc_escenas(
             continue
         recorte, huella = r
         ventanas = _ventanas(recorte, huella)
+        alto, ancho = recorte.shape
+        # antes de corregir: si el proceso muere (p. ej. sin memoria), el log dice en qué escena
+        avisar(f"RTC inicio {item.id} {ancho}x{alto} px en {len(ventanas)} ventanas")
         safe = descargar_safe(item, trabajo / "safe")
         rutas = {}
         teselas_dem: dict[str, Any] = {}
