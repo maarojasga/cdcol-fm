@@ -92,3 +92,21 @@ def test_ventanas_cubren_el_recorte() -> None:
     # una huella que solo toca la esquina superior izquierda
     esquina = box(0, 100000 - 5000, 5000, 100000, CRS)
     assert [(f, c) for f, c, _ in _ventanas(recorte, esquina)] == [(0, 0)]
+
+
+def test_correr_aparte_usa_un_proceso_nuevo_por_tarea(tmp_path: Path) -> None:
+    import shutil
+
+    from cdcol_fm.ard.rtc import correr_aparte, pool_aparte
+
+    origen = tmp_path / "a.txt"
+    origen.write_text("hola")
+    pool = pool_aparte()
+    try:
+        correr_aparte(pool, shutil.copyfile, origen, tmp_path / "b.txt")
+        correr_aparte(pool, shutil.copyfile, origen, tmp_path / "c.txt")
+        with pytest.raises(FileNotFoundError):
+            correr_aparte(pool, shutil.copyfile, tmp_path / "no-existe", tmp_path / "d.txt")
+    finally:
+        pool.shutdown()
+    assert (tmp_path / "b.txt").read_text() == (tmp_path / "c.txt").read_text() == "hola"
