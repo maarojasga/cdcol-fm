@@ -12,10 +12,11 @@ ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_PROJECT_ENVIRONMENT=/opt/venv PAT
 WORKDIR /app
 # primero solo las dependencias, para que cambiar el código no reinstale todo
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --locked --no-dev --extra cubo --extra radar --no-install-project
+RUN uv sync --locked --no-dev --extra cubo --extra radar --extra bench --no-install-project
 COPY src ./src
 COPY config ./config
-RUN uv sync --locked --no-dev --extra cubo --extra radar
+COPY experimentos ./experimentos
+RUN uv sync --locked --no-dev --extra cubo --extra radar --extra bench
 
 # los productos se escriben en /datos, que se monta desde el computador
 WORKDIR /datos

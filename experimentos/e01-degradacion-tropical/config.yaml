@@ -1,0 +1,50 @@
+# Experimento 1. Pre-registro: estos valores se fijan antes de ver resultados.
+# Cambiar algo después de ver datos se anota en el README (sección "Cambios") con la razón.
+id: e01
+nombre: Degradación tropical de un modelo fundacional global
+zona: macarena
+anio: 2024
+# Bloques de la grilla nacional. Los elige `cdcol elegir-bloques e01 --escribir` con la regla
+# del README (sección "Elección de bloques"); no se editan a mano. Con menos de 2 × pliegues no corre.
+bloques: [x477_y177, x477_y187, x478_y187, x479_y177, x479_y182, x479_y184, x479_y188, x480_y182, x480_y186, x480_y187, x481_y176, x481_y177, x481_y183, x481_y184, x481_y188]
+
+tarea: bosque-no-bosque
+clases: {0: no-bosque, 1: bosque}
+referencia:
+  fuente: mapbiomas-col
+  # GeoTIFF con 0/1 (o los códigos originales + reclasificacion). Lo pone quien corre el
+  # experimento; no va a git.
+  ruta: data/referencias/mapbiomas-col_2024_macarena.tif
+  # códigos MapBiomas → clase. Por confirmar contra la leyenda de la colección usada.
+  reclasificacion: {3: 1, 4: 1, 5: 1, 6: 1}
+  otros_a: 0
+  nodata: 0
+  # píxeles de 10 m cuya ventana de (2 × radio + 1)² tiene una sola clase: lejos de bordes,
+  # porque la referencia es de 30 m
+  radio_homogeneo: 3
+
+estratos:
+  # nubosidad del píxel en el año: suma de n_validas_s2 de los 12 meses, partida en terciles
+  # de toda la zona (no depende del resultado, solo de la cobertura de datos)
+  variable: n_validas_anual
+  nombres: [nublado, intermedio, despejado]
+
+evaluacion:
+  pliegues: 5                     # validación cruzada por bloques (sin fuga espacial)
+  etiquetas_por_clase: [10, 50, 100, 500]
+  presupuesto_principal: 100       # el que decide las hipótesis
+  prueba_por_clase_y_estrato: 2000
+  semillas: [0, 1, 2, 3, 4]
+  bootstrap: 2000
+  metrica: exactitud_balanceada
+  # brecha = métrica(fundacional) − métrica(local). Ver README, "Criterio de decisión".
+  delta: 0.02
+
+brazos:
+  - id: local-rf
+    tipo: bosque-aleatorio
+    rasgos: ard-anual       # mediana, p10 y p90 anuales de S2 + VV/VH; sin capas de incertidumbre
+    referencia: true        # el brazo contra el que se mide la brecha
+  - id: galileo-r0-sonda
+    tipo: sonda-lineal
+    rasgos: emb_galileo-tiny_r0-base_v0   # producto de embeddings (ADR 0002); fase 2

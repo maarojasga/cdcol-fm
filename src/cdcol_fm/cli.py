@@ -159,6 +159,83 @@ def vista(
 
 
 @app.command()
+def experimento(
+    id_exp: Annotated[str, typer.Argument(help="Id del experimento, p. ej. e01")],
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    solo_validar: Annotated[
+        bool, typer.Option("--solo-validar", help="Solo revisa el config (pre-registro)")
+    ] = False,
+) -> None:
+    """Corre un experimento pre-registrado de experimentos/ y escribe su veredicto."""
+    from cdcol_fm.bench.experimento import cargar_experimento
+
+    exp = cargar_experimento(id_exp)
+    if solo_validar:
+        typer.echo(f"OK: {exp.id} ({len(exp.brazos)} brazos, {len(exp.bloques)} bloques)")
+        return
+
+    from cdcol_fm.bench.correr import cargar_datos, evaluar, guardar, veredicto
+
+    # rutas relativas del config (la referencia) desde donde se corre: en Docker, /datos
+    datos = cargar_datos(exp, salida, Path.cwd())
+    sin_datos = [b.id for b in exp.brazos if b.id not in datos.rasgos]
+    if sin_datos:
+        typer.echo(f"Sin datos, no corren: {', '.join(sin_datos)}", err=True)
+    filas, preds = evaluar(exp, datos)
+    texto, _ = veredicto(exp, preds)
+    carpeta = salida / "experimentos" / exp.id
+    guardar(exp, filas, texto, datos, carpeta)
+    typer.echo(texto)
+    typer.echo(f"Resultados: {carpeta}")
+
+
+@app.command("elegir-bloques")
+def elegir_bloques(
+    id_exp: Annotated[str, typer.Argument(help="Id del experimento, p. ej. e01")],
+    franjas: Annotated[int, typer.Option(help="Franjas sur-norte")] = 5,
+    por_franja: Annotated[int, typer.Option(help="Bloques por franja")] = 3,
+    escribir: Annotated[
+        bool, typer.Option("--escribir", help="Guarda la lista en el config.yaml del experimento")
+    ] = False,
+) -> None:
+    """Elige los bloques de un experimento con la regla fija de bench/seleccion.py."""
+    import csv
+    import re
+
+    from cdcol_fm.bench.experimento import cargar_experimento, carpeta_experimento
+    from cdcol_fm.bench.seleccion import candidatos_worldcover, elegir
+    from cdcol_fm.config import cargar_zona
+
+    exp = cargar_experimento(id_exp)
+    zona = cargar_zona(exp.zona)
+    candidatos = candidatos_worldcover(zona, cargar_pais(zona.pais))
+    elegidos = elegir(candidatos, franjas, por_franja)
+    ids = {c.id for c in elegidos}
+    carpeta = carpeta_experimento(id_exp)
+    with (carpeta / "bloques.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["bloque", "columna", "fila", "dentro", "bosque", "elegible", "elegido"])
+        for c in sorted(candidatos, key=lambda c: (c.fila, c.columna)):
+            fila = [c.id, c.columna, c.fila, f"{c.dentro:.3f}", f"{c.bosque:.3f}"]
+            w.writerow([*fila, int(c.elegible), int(c.id in ids)])
+    n_eleg = sum(c.elegible for c in candidatos)
+    typer.echo(f"{len(candidatos)} bloques, {n_eleg} elegibles, {len(elegidos)} elegidos:")
+    for c in elegidos:
+        typer.echo(f"  {c.id}  fila {c.fila}  bosque {c.bosque:.0%}")
+    lista = "bloques: [" + ", ".join(sorted(ids)) + "]"
+    if escribir:
+        ruta = carpeta / "config.yaml"
+        texto = ruta.read_text(encoding="utf-8")
+        nuevo, n = re.subn(r"^bloques: \[.*\]$", lista, texto, flags=re.M)
+        if n != 1:
+            raise typer.BadParameter(f"no encontré una línea 'bloques: [...]' en {ruta}")
+        ruta.write_text(nuevo, encoding="utf-8")
+        typer.echo(f"Guardado en {ruta} y {carpeta / 'bloques.csv'}")
+    else:
+        typer.echo(lista)
+
+
+@app.command()
 def embeber(zona: str, receta: str) -> None:
     """Calcula el producto de embeddings de una receta sobre una zona."""
     _pendiente(2)

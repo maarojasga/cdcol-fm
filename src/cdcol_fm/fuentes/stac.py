@@ -83,6 +83,18 @@ DEM_GLO30 = Fuente(
     atemporal=True,
 )
 
+# Cobertura global a 10 m (2020 y 2021). Solo para elegir bloques de un experimento: es
+# independiente de la referencia del experimento (MapBiomas) y de sus resultados.
+WORLDCOVER = Fuente(
+    nombre="worldcover",
+    url="https://planetarycomputer.microsoft.com/api/stac/v1",
+    coleccion="esa-worldcover",
+    bandas=("map",),
+    firmar=True,
+    atemporal=True,
+)
+WORLDCOVER_BOSQUE = 10  # "Tree cover"
+
 # Asset de Earth Search → nombre de banda en el producto ARD.
 RENOMBRE_S2 = {
     "blue": "B02",

@@ -13,11 +13,20 @@ from cdcol_fm.ard.mascara import nube, observada, validas
 
 SIN_VISTA_CLARA = np.uint16(65535)
 FRECUENCIA = "1MS"  # mensual, etiquetado al inicio del mes
+# Meses antes de cada mes en los que se busca la última vista clara. Fijo para que
+# dias_desde_clara no dependa de cuántos meses se calcularon juntos (ard vs. ard-mes): quien
+# calcula un mes debe cargar S2 desde HISTORIA_MESES antes (ver bloques.con_historia).
+HISTORIA_MESES = 6
 
 
 def _fin_de_mes(tiempos: xr.DataArray) -> np.ndarray:
     inicio = tiempos.values.astype("datetime64[M]")
     return (inicio + np.timedelta64(1, "M")).astype("datetime64[ns]")
+
+
+def _limite_historia(tiempos: xr.DataArray, meses: int) -> np.ndarray:
+    inicio = tiempos.values.astype("datetime64[M]")
+    return (inicio - np.timedelta64(meses, "M")).astype("datetime64[ns]")
 
 
 def compuesto_s2(s2: xr.Dataset) -> xr.Dataset:
@@ -43,20 +52,26 @@ def compuesto_s2(s2: xr.Dataset) -> xr.Dataset:
 
 
 def _dias_desde_clara(ok: xr.DataArray, meses: xr.DataArray) -> xr.DataArray:
-    """Días entre el fin de cada mes y la última observación válida anterior (de cualquier mes)."""
+    """Días entre el fin de cada mes y la última observación válida anterior.
+
+    Solo cuentan observaciones desde ``HISTORIA_MESES`` antes del inicio del mes; si no hay
+    ninguna en esa ventana, el píxel queda en ``SIN_VISTA_CLARA``.
+    """
     t = ok["time"].values.astype("datetime64[ns]")
     ultima = np.full(ok.shape[1:], np.datetime64("NaT", "ns"))
     orden = np.argsort(t)
     fines = _fin_de_mes(meses)
+    limites = _limite_historia(meses, HISTORIA_MESES)
     capas = []
     i = 0
-    for fin in fines:
+    for fin, limite in zip(fines, limites, strict=True):
         while i < len(orden) and t[orden[i]] < fin:
             k = orden[i]
             ultima = np.where(ok.values[k], t[k], ultima)
             i += 1
         dias = (fin - ultima) / np.timedelta64(1, "D")
-        capa = np.where(np.isnat(ultima), SIN_VISTA_CLARA, np.minimum(dias, 65534))
+        sin_vista = np.isnat(ultima) | (ultima < limite)
+        capa = np.where(sin_vista, SIN_VISTA_CLARA, np.minimum(dias, 65534))
         capas.append(capa.astype("uint16"))
     return xr.DataArray(
         np.stack(capas),

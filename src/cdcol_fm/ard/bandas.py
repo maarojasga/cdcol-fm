@@ -8,7 +8,7 @@ BANDAS_S1 = ("VV", "VH")
 BANDAS_INCERTIDUMBRE = (
     "n_validas_s2",  # observaciones ópticas válidas en el mes
     "dias_desde_clara",  # días desde la última observación óptica limpia
-    "prob_nube",  # probabilidad media de nube del mes
+    "prob_nube",  # % de observaciones del mes marcadas como nube
     "n_adq_s1",  # adquisiciones S1 del mes
     "incert_s2",  # dispersión de las observaciones válidas
 )

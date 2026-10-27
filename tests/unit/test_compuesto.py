@@ -76,6 +76,26 @@ def test_sin_vista_clara_nunca() -> None:
     assert int(compuesto_mensual(s2, None)["dias_desde_clara"].max()) == SIN_VISTA_CLARA
 
 
+def test_vista_clara_fuera_de_la_historia_no_cuenta() -> None:
+    # última válida el 10 de enero; en agosto ya pasaron más de HISTORIA_MESES (6) meses
+    s2 = _s2(["2024-01-10", "2024-07-05", "2024-08-05"], [VEG, NUBE, NUBE], [100, 9999, 9999])
+    ard = compuesto_mensual(s2, None)
+    assert _mes(ard, "dias_desde_clara", 6) == 204  # julio: enero está dentro de la ventana
+    assert _mes(ard, "dias_desde_clara", 7) == SIN_VISTA_CLARA  # agosto: ya no
+
+
+def test_un_mes_con_su_historia_da_lo_mismo_que_la_serie_completa(ard: xr.Dataset) -> None:
+    """Lo que hace ard-mes: carga la historia y se queda con el último mes."""
+    s2 = _s2(
+        ["2024-01-05", "2024-01-10", "2024-01-20", "2024-02-04", "2024-02-14", "2024-03-05"],
+        [VEG, VEG, NUBE, NUBE, NUBE, SIN_DATO],
+        [100, 300, 9999, 9999, 9999, 0],
+    )
+    solo_marzo = compuesto_mensual(s2, None).sel(time=slice("2024-03-01", None))
+    assert solo_marzo.sizes["time"] == 1
+    assert _mes(solo_marzo, "dias_desde_clara", 0) == _mes(ard, "dias_desde_clara", 2) == 82
+
+
 def test_fraccion_de_nube(ard: xr.Dataset) -> None:
     assert _mes(ard, "prob_nube", 0) == 33
     assert _mes(ard, "prob_nube", 1) == 100

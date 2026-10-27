@@ -7,6 +7,8 @@ zona y en la grilla nacional: la salida cae alineada con S2 sin remuestrear otra
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,10 +23,15 @@ from cdcol_fm.ingesta.carga import grilla_destino
 RADIOMETRIA = "gamma_bilinear"
 TROZO = 1024  # chunks por defecto de sarsen.terrain_correction
 VENTANA = 2048  # lado (px) de cada corrida de sarsen; acota la memoria
+# Hilos de dask dentro de sarsen. Con 4 (los núcleos del runner) los picos pasan de 15 GB.
+HILOS_SARSEN = 2
 
 
-def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path:
-    """Copernicus GLO-30 remuestreado a la grilla nacional y recortado a la zona."""
+def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> tuple[Path, list[Any]]:
+    """Copernicus GLO-30 remuestreado a la grilla nacional y recortado a la zona.
+
+    Devuelve la ruta y las teselas usadas, que van al linaje del producto (ADR 0001).
+    """
     import odc.stac
     import rioxarray  # noqa: F401
 
@@ -43,7 +50,7 @@ def preparar_dem(zona: Zona, pais: Pais, ruta: Path, geobox: Any = None) -> Path
     )["data"].isel(time=0, drop=True)
     ruta.parent.mkdir(parents=True, exist_ok=True)
     dem.astype("float32").rio.to_raster(ruta)
-    return ruta
+    return ruta, items
 
 
 def rtc_escena(safe: Path, polarizacion: str, dem: Path, salida: Path) -> xr.DataArray:
@@ -60,12 +67,38 @@ def rtc_escena(safe: Path, polarizacion: str, dem: Path, salida: Path) -> xr.Dat
     )
 
 
+def _rtc_ventana(safe: Path, polarizacion: str, dem: Path, salida: Path) -> None:
+    """Una ventana de RTC con pocos hilos. Corre en un proceso aparte (ver ``correr_aparte``)."""
+    import dask
+
+    with dask.config.set(scheduler="threads", num_workers=HILOS_SARSEN):
+        rtc_escena(safe, polarizacion, dem, salida)
+
+
+def correr_aparte(pool: ProcessPoolExecutor, fn: Callable[..., None], *args: Any) -> None:
+    """Corre ``fn`` en un proceso nuevo del ``pool`` y espera; los errores suben al llamador.
+
+    sarsen deja ~10 GB retenidos entre ventanas (medido en agosto-diciembre de 2024, runner de
+    16 GB): en un proceso aparte, la memoria vuelve al sistema al terminar cada ventana.
+    """
+    pool.submit(fn, *args).result()
+
+
+def pool_aparte() -> ProcessPoolExecutor:
+    """Un proceso a la vez, nuevo para cada tarea (``spawn``: no hereda la memoria del padre)."""
+    import multiprocessing
+
+    contexto = multiprocessing.get_context("spawn")
+    return ProcessPoolExecutor(max_workers=1, mp_context=contexto, max_tasks_per_child=1)
+
+
 @dataclass(frozen=True)
 class EscenaRTC:
     """Una escena S1 ya corregida: gamma0 lineal por polarización, en la grilla nacional."""
 
     item: Any
     rutas: dict[str, Path]
+    dem: tuple[Any, ...] = ()  # teselas GLO-30 usadas en la corrección
 
 
 def geobox_zona(zona: Zona, pais: Pais) -> Any:
@@ -131,49 +164,56 @@ def rtc_escenas(
 
     geobox = geobox if geobox is not None else geobox_zona(zona, pais)
     salida = []
-    for item in sorted((it for it in items if es_iw(it)), key=lambda it: it.datetime):
-        r = _recorte(item, geobox, pais)
-        if r is None:
-            continue
-        recorte, huella = r
-        ventanas = _ventanas(recorte, huella)
-        safe = descargar_safe(item, trabajo / "safe")
-        rutas = {}
-        for pol in ("VV", "VH"):
-            ruta = trabajo / "rtc" / f"{item.id}_{pol}.tif"
-            ruta.parent.mkdir(parents=True, exist_ok=True)
+    with pool_aparte() as pool:
+        for item in sorted((it for it in items if es_iw(it)), key=lambda it: it.datetime):
+            r = _recorte(item, geobox, pais)
+            if r is None:
+                continue
+            recorte, huella = r
+            ventanas = _ventanas(recorte, huella)
             alto, ancho = recorte.shape
-            perfil = {
-                "driver": "GTiff",
-                "width": ancho,
-                "height": alto,
-                "count": 1,
-                "dtype": "float32",
-                "nodata": float("nan"),
-                "crs": str(recorte.crs),
-                "transform": recorte.affine,
-                "tiled": True,
-                "compress": "deflate",
-                "BIGTIFF": "IF_SAFER",
-            }
-            with rasterio.open(ruta, "w", **perfil) as destino:
-                for f, c, sub in ventanas:
-                    dem = preparar_dem(zona, pais, trabajo / "dem.tif", sub)
-                    parcial = trabajo / "parcial.tif"
-                    rtc_escena(safe, pol, dem, parcial)
-                    with rasterio.open(parcial) as fuente:
-                        h, w = fuente.height, fuente.width
-                        destino.write(fuente.read(1), 1, window=Window(c, f, w, h))
-            rutas[pol] = ruta
-        # el SAFE pesa ~1-2 GB: se borra apenas queda el gamma0 recortado
-        shutil.rmtree(safe, ignore_errors=True)
-        salida.append(EscenaRTC(item, rutas))
-        libre_gb = shutil.disk_usage(trabajo).free / 1e9
-        alto, ancho = recorte.shape
-        avisar(
-            f"RTC {item.id} {ancho}x{alto} px en {len(ventanas)} ventanas "
-            f"(disco libre {libre_gb:.0f} GB)"
-        )
+            # antes de corregir: si el proceso muere (p. ej. sin memoria), el log dice en qué escena
+            avisar(f"RTC inicio {item.id} {ancho}x{alto} px en {len(ventanas)} ventanas")
+            safe = descargar_safe(item, trabajo / "safe")
+            rutas = {}
+            teselas_dem: dict[str, Any] = {}
+            for pol in ("VV", "VH"):
+                ruta = trabajo / "rtc" / f"{item.id}_{pol}.tif"
+                ruta.parent.mkdir(parents=True, exist_ok=True)
+                alto, ancho = recorte.shape
+                perfil = {
+                    "driver": "GTiff",
+                    "width": ancho,
+                    "height": alto,
+                    "count": 1,
+                    "dtype": "float32",
+                    "nodata": float("nan"),
+                    "crs": str(recorte.crs),
+                    "transform": recorte.affine,
+                    "tiled": True,
+                    "compress": "deflate",
+                    "BIGTIFF": "IF_SAFER",
+                }
+                with rasterio.open(ruta, "w", **perfil) as destino:
+                    for f, c, sub in ventanas:
+                        dem, usadas = preparar_dem(zona, pais, trabajo / "dem.tif", sub)
+                        teselas_dem.update((t.id, t) for t in usadas)
+                        parcial = trabajo / "parcial.tif"
+                        correr_aparte(pool, _rtc_ventana, safe, pol, dem, parcial)
+                        with rasterio.open(parcial) as fuente:
+                            h, w = fuente.height, fuente.width
+                            destino.write(fuente.read(1), 1, window=Window(c, f, w, h))
+                rutas[pol] = ruta
+            # el SAFE pesa ~1-2 GB: se borra apenas queda el gamma0 recortado
+            shutil.rmtree(safe, ignore_errors=True)
+            dem_escena = tuple(teselas_dem[k] for k in sorted(teselas_dem))
+            salida.append(EscenaRTC(item, rutas, dem_escena))
+            libre_gb = shutil.disk_usage(trabajo).free / 1e9
+            alto, ancho = recorte.shape
+            avisar(
+                f"RTC {item.id} {ancho}x{alto} px en {len(ventanas)} ventanas "
+                f"(disco libre {libre_gb:.0f} GB)"
+            )
     return salida
 
 

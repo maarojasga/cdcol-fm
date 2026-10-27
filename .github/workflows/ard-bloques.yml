@@ -77,6 +77,11 @@ jobs:
           inicio=$(date +%s)
           opciones=()
           [ -n "$BLOQUES" ] && opciones=(--bloques "$BLOQUES")
+          # memoria cada 30 s: si GitHub apaga la máquina (así se ve quedarse sin memoria), queda
+          # en el log hasta dónde subió
+          (while true; do echo "$(( $(date +%s) - inicio ))s memoria $(free -m | awk '/Mem/{print $3 "/" $2 " MB"}')"; sleep 30; done) &
+          vigia=$!
+          trap 'kill $vigia 2>/dev/null' EXIT
           # cada línea con los segundos transcurridos, para saber qué etapa pesa
           uv run cdcol ard-mes "$ZONA" "$MES" --salida data "${opciones[@]}" 2>&1 \
             | while IFS= read -r l; do echo "$(( $(date +%s) - inicio ))s $l"; done | tee ard.log || {
@@ -100,4 +105,4 @@ jobs:
         with:
           name: ard-${{ env.ZONA }}-${{ matrix.mes }}
           path: data/
-          retention-days: 3
+          retention-days: 14
