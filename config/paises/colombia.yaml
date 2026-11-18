@@ -1,0 +1,11 @@
+id: colombia
+nombre: Colombia
+grilla:
+  # MAGNA-SIRGAS / Origen Nacional (CTM12), el CRS oficial nacional.
+  crs: EPSG:9377
+  resolucion_m: 10
+  tesela_px: 1024   # ~10 km de lado
+fuentes_etiquetas:
+  - upra          # arroz, papa, cacao (semestral); licencia por confirmar
+  - mapbiomas-col # colección 3, 30 m
+  - corine-ideam  # 1:100.000, gruesa

@@ -1,0 +1,12 @@
+# Zona piloto elegida por Ale (12-oct-2026).
+# Serranía de La Macarena (Meta): transición Andes-Orinoquía-Amazonía, nubosidad alta,
+# frontera agrícola y deforestación. bbox aproximado: cubre la serranía y su borde
+# agrícola (Vista Hermosa, Mesetas, La Macarena); ajustar con el polígono oficial del PNN
+# y del AMEM antes de la fase 1.
+id: macarena
+pais: colombia
+descripcion: Sierra de La Macarena (Meta), piloto
+bbox: [-74.10, 2.20, -73.55, 3.45]
+fecha_inicio: "2022-01-01"
+fecha_fin: "2025-12-31"
+productos: [ard_s1s2_mensual]

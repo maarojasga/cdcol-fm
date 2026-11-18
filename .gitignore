@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.env
+# datos: nunca van a git (ver docs/adr/0001)
+data/
+*.tif
+*.zarr/
+mlruns/

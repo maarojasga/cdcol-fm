@@ -1,0 +1,8 @@
+# Zona diminuta para la CI y el demo local: unas pocas teselas y fechas.
+id: prueba
+pais: colombia
+descripcion: Zona diminuta para pruebas (Chinchiná, Caldas)
+bbox: [-75.62, 4.97, -75.60, 4.99]
+fecha_inicio: "2024-01-01"
+fecha_fin: "2024-03-31"
+productos: [ard_s1s2_mensual]

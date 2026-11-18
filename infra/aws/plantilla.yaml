@@ -1,0 +1,221 @@
+# Cálculo bajo demanda del ARD en AWS (ADR 0005): bucket, imagen, AWS Batch sobre Fargate Spot y
+# presupuesto. Sin servidores encendidos: si nadie lanza trabajos, solo se paga el almacenamiento.
+# Se despliega con infra/aws/cdcol-aws.sh pila; se borra entera con
+#   aws cloudformation delete-stack --stack-name cdcol-fm   (el bucket debe estar vacío).
+AWSTemplateFormatVersion: "2010-09-09"
+Description: cdcol-fm - ARD bajo demanda (Batch + Fargate Spot + S3)
+
+Parameters:
+  CorreoAlertas:
+    Type: String
+    Description: Correo que recibe las alertas de presupuesto
+  PresupuestoUSD:
+    Type: Number
+    Default: 25
+    Description: Gasto mensual que dispara alertas (al 50, 80 y 100 %), sin contar créditos
+  DiasExpiracion:
+    Type: Number
+    Default: 30
+    Description: Días que vive lo que está bajo zonas/ (ADR 0003). permanente/ no expira
+  MaxVcpus:
+    Type: Number
+    Default: 8
+    Description: Tope de vCPU simultáneas (8 = dos meses en paralelo). Es el freno de gasto duro
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  Subredes:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subredes públicas (las de la VPC por defecto). Con IP pública no hace falta NAT
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: zonas-expiran
+            Status: Enabled
+            Prefix: zonas/
+            ExpirationInDays: !Ref DiasExpiracion
+          - Id: subidas-incompletas
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+
+  Repositorio:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: cdcol-fm
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules": [{"rulePriority": 1, "description": "solo las 3 últimas imágenes",
+            "selection": {"tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 3},
+            "action": {"type": "expire"}}]}
+
+  Registros:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cdcol-fm/batch
+      RetentionInDays: 30
+
+  GrupoSeguridad:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: cdcol-fm - solo salida (STAC, CDSE, S3)
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  # Lo usa Fargate para bajar la imagen, escribir registros y leer las llaves de CDSE.
+  RolEjecucion:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: llaves-cdse
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdcol-fm/*
+
+  # Lo usa el código dentro del contenedor: solo escribe y lee en su bucket.
+  RolTarea:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bucket-cdcol
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub ${Bucket.Arn}/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
+
+  EntornoComputo:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: FARGATE_SPOT
+        MaxvCpus: !Ref MaxVcpus
+        Subnets: !Ref Subredes
+        SecurityGroupIds: [!Ref GrupoSeguridad]
+
+  Cola:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: cdcol-fm
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref EntornoComputo
+
+  # Un trabajo = una zona × un mes (y opcionalmente unos bloques). Mismo comando que en Actions.
+  ArdMes:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      JobDefinitionName: cdcol-ard-mes
+      Type: container
+      PlatformCapabilities: [FARGATE]
+      Timeout:
+        AttemptDurationSeconds: 21600  # 6 h; un mes de La Macarena tardó ~2,5 h en Actions
+      RetryStrategy:
+        Attempts: 2  # Fargate Spot puede interrumpir la tarea; se reintenta una vez
+      Parameters:
+        zona: macarena
+        mes: "2024-01"
+        bloques: todos  # o "x479_y182,x480_y182"
+      ContainerProperties:
+        Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/cdcol-fm:latest
+        Command:
+          - ard-mes
+          - Ref::zona
+          - Ref::mes
+          - --salida
+          - /datos
+          - --bloques
+          - Ref::bloques
+          - --subir
+          - !Sub s3://${Bucket}/zonas
+        ResourceRequirements:
+          - { Type: VCPU, Value: "4" }
+          - { Type: MEMORY, Value: "16384" }  # lo mismo que el runner de Actions
+        EphemeralStorage:
+          SizeInGiB: 100  # .SAFE de S1 (1-2 GB c/u) + productos; se mide en la primera corrida
+        NetworkConfiguration:
+          AssignPublicIp: ENABLED
+        FargatePlatformConfiguration:
+          PlatformVersion: LATEST
+        ExecutionRoleArn: !GetAtt RolEjecucion.Arn
+        JobRoleArn: !GetAtt RolTarea.Arn
+        Environment:
+          - { Name: NO_COLOR, Value: "1" }
+        Secrets:
+          - Name: CDSE_S3_ACCESS_KEY
+            ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdcol-fm/cdse-access-key
+          - Name: CDSE_S3_SECRET_KEY
+            ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdcol-fm/cdse-secret-key
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref Registros
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: ard-mes
+
+  # Mide el gasto bruto: con IncludeCredit los créditos lo dejarían en cero y nunca avisaría.
+  Presupuesto:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: cdcol-fm-mensual
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref PresupuestoUSD
+          Unit: USD
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 50 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref CorreoAlertas }]
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref CorreoAlertas }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref CorreoAlertas }]
+
+Outputs:
+  Bucket:
+    Value: !Ref Bucket
+  Imagen:
+    Value: !GetAtt Repositorio.RepositoryUri
+  Cola:
+    Value: !Ref Cola
+  Definicion:
+    Value: !Ref ArdMes
