@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -25,6 +26,9 @@ RAIZ_REPO = RAIZ_CONFIG.parent
 
 
 def _commit() -> str:
+    # en la imagen Docker no hay .git: el commit llega fijado al construirla (cdcol-aws.sh imagen)
+    if fijado := os.environ.get("CDCOL_COMMIT"):
+        return fijado
     try:
         return subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=RAIZ_REPO, capture_output=True, text=True, check=True

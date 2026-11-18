@@ -1,0 +1,262 @@
+# Página para hablar con los datos (ADR 0006): página estática en S3 + CloudFront, API en Lambda
+# (URL de función, sin el límite de 30 s de API Gateway) e inicio de sesión con Cognito (solo
+# usuarios creados a mano). Lee el ARD del bucket de la pila cdcol-fm (ADR 0005).
+# Se despliega con `infra/aws/cdcol-aws.sh web`; se borra con
+#   aws cloudformation delete-stack --stack-name cdcol-fm-web   (el bucket de la página vacío).
+AWSTemplateFormatVersion: "2010-09-09"
+Description: cdcol-fm - pagina del chat con los datos (CloudFront + Lambda + Cognito)
+
+Parameters:
+  BucketDatos:
+    Type: String
+    Description: Bucket de la pila cdcol-fm (zonas/ y el estado del chat)
+  ImagenWeb:
+    Type: String
+    Default: ""
+    Description: URI@digest de la imagen en ECR. Vacía = aún no hay imagen (no se crea la función)
+  CuotaDiaria:
+    Type: Number
+    Default: 40
+    Description: Preguntas por persona y día
+
+Conditions:
+  HayImagen: !Not [!Equals [!Ref ImagenWeb, ""]]
+
+Resources:
+  Repositorio:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: cdcol-fm-web
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules": [{"rulePriority": 1, "description": "solo las 3 últimas imágenes",
+            "selection": {"tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 3},
+            "action": {"type": "expire"}}]}
+
+  # --- Página ---------------------------------------------------------------------------------
+
+  BucketWeb:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AccesoOrigen:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribucion:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: cdcol-fm - pagina del chat
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        Origins:
+          - Id: web
+            DomainName: !GetAtt BucketWeb.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt AccesoOrigen.Id
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # administrada: CachingOptimized
+
+  PoliticaWeb:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketWeb
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${BucketWeb.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribucion}
+
+  # --- Inicio de sesión -----------------------------------------------------------------------
+
+  Usuarios:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: cdcol-fm
+      UserPoolTier: LITE  # la pantalla clásica de inicio de sesión basta
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true  # la lista de correos: nadie se registra solo
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - { Name: verified_email, Priority: 1 }
+
+  Dominio:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub cdcol-fm-${AWS::AccountId}
+      UserPoolId: !Ref Usuarios
+      ManagedLoginVersion: 1  # pantalla clásica: no necesita un recurso de marca
+
+  Cliente:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: pagina
+      UserPoolId: !Ref Usuarios
+      GenerateSecret: false  # cliente público (navegador) con PKCE
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      # aws.cognito.signin.user.admin: lo exige GetUser, con el que la API valida el token
+      AllowedOAuthScopes: [openid, email, aws.cognito.signin.user.admin]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub "https://${Distribucion.DomainName}/"]
+      LogoutURLs: [!Sub "https://${Distribucion.DomainName}/"]
+      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH]
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # --- API ------------------------------------------------------------------------------------
+
+  Registros:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/cdcol-fm-web
+      RetentionInDays: 30
+
+  RolFuncion:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: datos-y-estado
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:aws:s3:::${BucketDatos}/zonas/*
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource:
+                  - !Sub arn:aws:s3:::${BucketDatos}/conversaciones/*
+                  - !Sub arn:aws:s3:::${BucketDatos}/imagenes/*
+                  - !Sub arn:aws:s3:::${BucketDatos}/cuotas/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${BucketDatos}
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdcol-fm/anthropic-api-key
+
+  Funcion:
+    Type: AWS::Lambda::Function
+    Condition: HayImagen
+    DependsOn: Registros
+    Properties:
+      FunctionName: cdcol-fm-web
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImagenWeb
+      Architectures: [x86_64]
+      Role: !GetAtt RolFuncion.Arn
+      MemorySize: 2048
+      Timeout: 300  # una pregunta son varias llamadas al modelo y lecturas de COG
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          CDCOL_DATOS: !Sub s3://${BucketDatos}/zonas
+          CDCOL_ESTADO: !Sub s3://${BucketDatos}
+          CDCOL_AUTH: cognito
+          CDCOL_CUOTA_DIARIA: !Ref CuotaDiaria
+          ANTHROPIC_API_KEY_SSM: /cdcol-fm/anthropic-api-key
+          # GDAL lee solo el COG pedido, sin listar la carpeta en S3
+          GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+          CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif
+
+  Url:
+    Type: AWS::Lambda::Url
+    Condition: HayImagen
+    Properties:
+      TargetFunctionArn: !GetAtt Funcion.Arn
+      AuthType: NONE  # la autenticación la hace la API con el token de Cognito
+      Cors:
+        AllowOrigins: [!Sub "https://${Distribucion.DomainName}"]
+        AllowMethods: [GET, POST]
+        AllowHeaders: [authorization, content-type]
+        MaxAge: 3600
+
+  # Desde oct-2025 una URL pública necesita los dos permisos; con uno solo responde 403
+  PermisoUrl:
+    Type: AWS::Lambda::Permission
+    Condition: HayImagen
+    Properties:
+      FunctionName: !Ref Funcion
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  PermisoInvocar:
+    Type: AWS::Lambda::Permission
+    Condition: HayImagen
+    Properties:
+      FunctionName: !Ref Funcion
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  Pagina:
+    Value: !Sub https://${Distribucion.DomainName}
+  BucketWeb:
+    Value: !Ref BucketWeb
+  Distribucion:
+    Value: !Ref Distribucion
+  Imagen:
+    Value: !GetAtt Repositorio.RepositoryUri
+  Usuarios:
+    Value: !Ref Usuarios
+  Cliente:
+    Value: !Ref Cliente
+  CognitoDominio:
+    Value: !Sub https://cdcol-fm-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com
+  Api:
+    Condition: HayImagen
+    Value: !GetAtt Url.FunctionUrl

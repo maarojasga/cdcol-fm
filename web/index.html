@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cubo cdcol-fm</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="estilo.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Cubo cdcol-fm</h1>
+    <p>Imágenes satelitales mensuales de Colombia. Elige una zona, mira sus capas y pregúntale a los datos.</p>
+  </div>
+  <div id="sesion" hidden><button id="salir" type="button">Salir</button></div>
+</header>
+<main>
+  <section id="lado-mapa">
+    <div id="mapa"></div>
+    <div id="controles" class="tarjeta">
+      <label>Zona <select id="zona"></select></label>
+      <label>Mes <select id="mes"></select></label>
+      <label>Capa
+        <select id="capa">
+          <option value="">Ninguna</option>
+          <option value="color">Color natural</option>
+          <option value="falso">Falso color</option>
+          <option value="ndvi">Vegetación (NDVI)</option>
+          <option value="n_validas_s2">Observaciones sin nube</option>
+          <option value="prob_nube">Nube</option>
+          <option value="vv">Radar VV</option>
+          <option value="vh">Radar VH</option>
+        </select>
+      </label>
+      <p id="seleccion">Haz clic en los bloques para elegir dónde preguntar.</p>
+    </div>
+    <div id="leyenda" class="tarjeta" hidden></div>
+  </section>
+  <section id="lado-chat">
+    <div id="mensajes" aria-live="polite">
+      <div class="bienvenida">
+        <p>Pregunta en lenguaje natural. Las respuestas salen de los datos calculados y muestran qué consultas se hicieron.</p>
+        <div id="sugerencias">
+          <button type="button">¿Qué meses hay calculados y qué tan nublados fueron?</button>
+          <button type="button">¿Cómo está la vegetación en los bloques elegidos?</button>
+          <button type="button">Muéstrame el color natural del mes más despejado.</button>
+        </div>
+      </div>
+    </div>
+    <form id="formulario">
+      <textarea id="pregunta" rows="2" placeholder="Escribe tu pregunta… (Enter envía, Mayús+Enter salta de línea)" required></textarea>
+      <button id="enviar" type="submit">Enviar</button>
+    </form>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -46,6 +46,26 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 2
+          # estado de la página del chat (ADR 0006)
+          - Id: conversaciones-expiran
+            Status: Enabled
+            Prefix: conversaciones/
+            ExpirationInDays: 30
+          - Id: imagenes-expiran
+            Status: Enabled
+            Prefix: imagenes/
+            ExpirationInDays: 7
+          - Id: cuotas-expiran
+            Status: Enabled
+            Prefix: cuotas/
+            ExpirationInDays: 7
+      # el mapa de la página pinta imágenes con URL firmada: el navegador exige CORS para usarlas.
+      # Solo lectura; sin la firma no se lee nada
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET]
+            AllowedOrigins: ["*"]
+            MaxAge: 3600
 
   Repositorio:
     Type: AWS::ECR::Repository

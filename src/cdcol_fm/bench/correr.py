@@ -18,7 +18,8 @@ from cdcol_fm.bench.experimento import Experimento
 from cdcol_fm.bench.metricas import METRICAS, brechas_bootstrap, ic95
 from cdcol_fm.bench.muestreo import (
     SIN_CLASE,
-    estratos_por_cuantiles,
+    asignar_estratos,
+    cortes_por_cuantiles,
     homogeneo,
     muestra_de_prueba,
     muestrear_por_clase,
@@ -40,6 +41,44 @@ class Datos:
     bloques: np.ndarray
     rasgos: dict[str, np.ndarray]
     cortes_estratos: np.ndarray = field(default_factory=lambda: np.array([]))
+    # (bloque, estrato, clase) → píxeles elegibles del bloque completo, antes de submuestrear
+    # candidatos. Solo para explicar una prueba insuficiente.
+    elegibles: dict[tuple[str, int, int], int] = field(default_factory=dict)
+
+
+class PruebaInsuficiente(ValueError):
+    """Algún pliegue no tiene la prueba pre-registrada en algún estrato y clase."""
+
+
+def verificar_prueba(exp: Experimento, datos: Datos) -> None:
+    """Falla si en algún pliegue × estrato × clase hay menos candidatos que
+    ``prueba_por_clase_y_estrato``: muestrear menos sin avisar cambiaría el pre-registro.
+    """
+    ev = exp.evaluacion
+    pliegue_de = pliegues_por_bloque(sorted(set(datos.bloques.tolist())), ev.pliegues)
+    pliegue = np.array([pliegue_de[b] for b in datos.bloques])
+    faltas = []
+    for f in range(ev.pliegues):
+        bloques_f = sorted(b for b, pf in pliegue_de.items() if pf == f)
+        for e, nombre in enumerate(exp.estratos.nombres):
+            for clase, nombre_clase in sorted(exp.clases.items()):
+                sel = (pliegue == f) & (datos.estratos == e) & (datos.clases == clase)
+                n = int(sel.sum())
+                if n < ev.prueba_por_clase_y_estrato:
+                    total = sum(datos.elegibles.get((b, e, clase), 0) for b in bloques_f)
+                    faltas.append(
+                        f"  pliegue {f} ({', '.join(bloques_f)}), {nombre}, {nombre_clase}: "
+                        f"{n} candidatos de {total} elegibles"
+                    )
+    if faltas:
+        raise PruebaInsuficiente(
+            f"{exp.id}: hacen falta {ev.prueba_por_clase_y_estrato} píxeles de prueba por clase "
+            "y estrato en cada pliegue, y no alcanzan en:\n"
+            + "\n".join(faltas)
+            + "\nNo se muestrea menos sin avisar: se decide y se anota en el README antes de "
+            "correr. Si los elegibles alcanzan y los candidatos no, el límite es "
+            "CANDIDATOS_POR_CLASE_Y_BLOQUE."
+        )
 
 
 @dataclass
@@ -71,6 +110,7 @@ def evaluar(
     Todos los brazos se entrenan con los mismos píxeles y se prueban en los mismos píxeles.
     """
     ev = exp.evaluacion
+    verificar_prueba(exp, datos)
     metrica = METRICAS[ev.metrica]
     brazos = [b for b in exp.brazos if b.id in datos.rasgos]
     pliegue_de = pliegues_por_bloque(sorted(set(datos.bloques.tolist())), ev.pliegues)
@@ -181,7 +221,7 @@ def veredicto(exp: Experimento, preds: dict[int, Predicciones]) -> tuple[str, di
 # --- Lectura de disco -------------------------------------------------------------------
 
 
-def _serie_bloque(base: Path, anio: int) -> Any:
+def _serie_bloque(base: Path, anio: int, solo: tuple[str, ...] | None = None) -> Any:
     """ARD mensual de un bloque (time, y, x) leído de sus COG."""
     import rioxarray
     import xarray as xr
@@ -194,7 +234,7 @@ def _serie_bloque(base: Path, anio: int) -> Any:
     capas = []
     for carpeta in meses:
         bandas = {}
-        for banda in BANDAS_ARD:
+        for banda in solo or BANDAS_ARD:
             da = rioxarray.open_rasterio(carpeta / f"{banda}.tif")
             assert isinstance(da, xr.DataArray)
             bandas[banda] = da.squeeze("band", drop=True)
@@ -204,9 +244,42 @@ def _serie_bloque(base: Path, anio: int) -> Any:
     return xr.concat(capas, dim="time")
 
 
+@dataclass
+class CortesEstratos:
+    cortes: np.ndarray
+    pixeles: int  # todos los píxeles de los bloques
+    sin_dato: int  # sin n_validas_s2 ningún mes: fuera de los estratos
+
+
+def _n_validas_bloque(exp: Experimento, destino: Path, id_bloque: str) -> np.ndarray:
+    from cdcol_fm.ard.escritura import carpeta_producto
+    from cdcol_fm.bench.rasgos import n_validas_anual
+
+    base = carpeta_producto(destino, exp.zona, id_bloque)
+    serie = _serie_bloque(base, exp.anio, ("n_validas_s2",))
+    meses = serie.sizes["time"]
+    if meses != 12:
+        raise ValueError(f"{id_bloque}: {meses} meses de {exp.anio} en {base}; hacen falta 12")
+    return n_validas_anual(serie)
+
+
+def calcular_cortes(exp: Experimento, destino: Path) -> CortesEstratos:
+    """Cortes de los estratos sobre todos los píxeles de los bloques que tienen valor.
+
+    Solo lee ``n_validas_s2`` del ARD: no depende de la referencia ni de ningún brazo.
+    """
+    valores = np.concatenate([_n_validas_bloque(exp, destino, b) for b in exp.bloques])
+    return CortesEstratos(
+        cortes=cortes_por_cuantiles(valores, len(exp.estratos.nombres)),
+        pixeles=int(valores.size),
+        sin_dato=int((~np.isfinite(valores)).sum()),
+    )
+
+
 def cargar_datos(exp: Experimento, destino: Path, raiz_repo: Path | None = None) -> Datos:
     """Candidatos de todos los bloques del experimento, con estratos y rasgos por brazo.
 
+    Los estratos usan los cortes fijados en el config; si el ARD ya no da esos cortes, falla.
     Un brazo cuyos rasgos no están en disco (p. ej. embeddings sin calcular) queda fuera.
     """
     import rioxarray
@@ -221,6 +294,12 @@ def cargar_datos(exp: Experimento, destino: Path, raiz_repo: Path | None = None)
             f"{exp.id}: {len(exp.bloques)} bloques; hacen falta al menos "
             f"{2 * exp.evaluacion.pliegues} (fijarlos en config.yaml)"
         )
+    if exp.estratos.cortes is None:
+        raise ValueError(
+            f"{exp.id}: faltan los cortes de los estratos; fijarlos con "
+            f"`cdcol estratos {exp.id} --escribir` antes de cargar la referencia"
+        )
+    cortes = np.array(exp.estratos.cortes)
     ruta_ref = exp.referencia.ruta
     if not ruta_ref.is_absolute() and raiz_repo is not None:
         ruta_ref = raiz_repo / ruta_ref
@@ -231,8 +310,10 @@ def cargar_datos(exp: Experimento, destino: Path, raiz_repo: Path | None = None)
     referencia = referencia.squeeze("band", drop=True)
 
     rng = np.random.default_rng(0)
-    partes: dict[str, list[np.ndarray]] = {"clases": [], "nvalidas": [], "bloques": []}
+    partes: dict[str, list[np.ndarray]] = {"clases": [], "estratos": [], "bloques": []}
     rasgos: dict[str, list[np.ndarray]] = {}
+    nvalidas_todas = []
+    elegibles: dict[tuple[str, int, int], int] = {}
     for id_bloque in exp.bloques:
         serie = _serie_bloque(carpeta_producto(destino, exp.zona, id_bloque), exp.anio)
         plantilla = serie["n_validas_s2"].isel(time=0)
@@ -241,26 +322,39 @@ def cargar_datos(exp: Experimento, destino: Path, raiz_repo: Path | None = None)
         clases = reclasificar(np.asarray(codigos), r.reclasificacion, r.otros_a, r.nodata)
         elegible = homogeneo(clases, r.radio_homogeneo).ravel()
         clases = clases.ravel()
+        nvalidas = n_validas_anual(serie)
+        nvalidas_todas.append(nvalidas)
+        estratos = asignar_estratos(nvalidas, cortes)
+        # un píxel sin valor de nubosidad no tiene estrato: no es candidato
+        elegible &= estratos >= 0
+        for e in range(len(exp.estratos.nombres)):
+            for clase in exp.clases:
+                n = int((elegible & (estratos == e) & (clases == clase)).sum())
+                elegibles[(id_bloque, e, clase)] = n
         idx = muestrear_por_clase(clases, CANDIDATOS_POR_CLASE_Y_BLOQUE, rng, elegible)
         partes["clases"].append(clases[idx])
-        partes["nvalidas"].append(n_validas_anual(serie)[idx])
+        partes["estratos"].append(estratos[idx])
         partes["bloques"].append(np.full(idx.size, id_bloque))
         x_ard, _ = ard_anual(serie)
         for brazo in exp.brazos:
             if brazo.rasgos == "ard-anual":
                 rasgos.setdefault(brazo.id, []).append(x_ard[idx])
             # los brazos de embeddings se agregan cuando exista `cdcol embeber` (fase 2)
-    estratos, cortes = estratos_por_cuantiles(
-        np.concatenate(partes["nvalidas"]), len(exp.estratos.nombres)
-    )
+    recalculados = cortes_por_cuantiles(np.concatenate(nvalidas_todas), len(cortes) + 1)
+    if not np.allclose(recalculados, cortes):
+        raise ValueError(
+            f"{exp.id}: el ARD da cortes {recalculados.tolist()}, pero el config fija "
+            f"{cortes.tolist()}: el ARD cambió después de fijarlos"
+        )
     clases = np.concatenate(partes["clases"])
     assert not np.any(clases == SIN_CLASE)
     return Datos(
         clases=clases,
-        estratos=estratos,
+        estratos=np.concatenate(partes["estratos"]),
         bloques=np.concatenate(partes["bloques"]),
         rasgos={b: np.concatenate(x) for b, x in rasgos.items()},
         cortes_estratos=cortes,
+        elegibles=elegibles,
     )
 
 
@@ -280,6 +374,10 @@ def guardar(
     contexto = {
         "experimento": exp.id,
         "cortes_estratos_n_validas_anual": datos.cortes_estratos.tolist(),
+        "elegibles_bloque_estrato_clase": {
+            f"{b}|{exp.estratos.nombres[e]}|{exp.clases[c]}": n
+            for (b, e, c), n in sorted(datos.elegibles.items())
+        },
         "candidatos": int(datos.clases.size),
         "brazos_con_datos": sorted(datos.rasgos),
     }

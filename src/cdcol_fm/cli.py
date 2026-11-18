@@ -176,6 +176,57 @@ def vista(
 
 
 @app.command()
+def web(
+    datos: Annotated[
+        str,
+        typer.Option(
+            envvar="CDCOL_DATOS", help="Raíz de las zonas: carpeta local o s3://<bucket>/zonas"
+        ),
+    ] = "data",
+    puerto: Annotated[int, typer.Option(help="Puerto local")] = 8000,
+    abrir: Annotated[bool, typer.Option(help="Abrir la página en el navegador")] = True,
+) -> None:
+    """Página local con el mapa, el visor y el chat sobre los datos (ADR 0006).
+
+    El chat usa la API de Anthropic: necesita ANTHROPIC_API_KEY en el entorno o en el .env del
+    repositorio (en Lambda, el nombre del parámetro de SSM en ANTHROPIC_API_KEY_SSM). El resto de
+    la configuración de AWS va por variables de entorno (ver chat/servidor.py).
+    """
+    import os
+    import webbrowser
+
+    from cdcol_fm.chat.datos import Almacen
+    from cdcol_fm.chat.servidor import servidor_de_entorno
+    from cdcol_fm.config import cargar_env
+
+    cargar_env()
+    if parametro := os.environ.get("ANTHROPIC_API_KEY_SSM"):
+        import boto3  # type: ignore[import-untyped]
+
+        r = boto3.client("ssm").get_parameter(Name=parametro, WithDecryption=True)
+        os.environ["ANTHROPIC_API_KEY"] = r["Parameter"]["Value"]
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        typer.echo(
+            "Aviso: falta ANTHROPIC_API_KEY (en .env o en el entorno); el mapa y el visor "
+            "funcionan, pero el chat no responderá.",
+            err=True,
+        )
+    almacen = Almacen(datos)
+    zonas_con_datos = almacen.zonas()
+    if not zonas_con_datos:
+        typer.echo(f"Aviso: todavía no hay zonas con ARD en {datos}", err=True)
+    servidor = servidor_de_entorno(almacen, puerto)
+    url = f"http://127.0.0.1:{puerto}"
+    typer.echo(f"{url}  ({', '.join(zonas_con_datos) or 'sin zonas'} en {datos}); Ctrl+C para salir")
+    if abrir:
+        webbrowser.open(url)
+    try:
+        servidor.serve_forever()
+    except KeyboardInterrupt:
+        servidor.server_close()
+
+
+@app.command()
 def experimento(
     id_exp: Annotated[str, typer.Argument(help="Id del experimento, p. ej. e01")],
     salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
@@ -250,6 +301,50 @@ def elegir_bloques(
         typer.echo(f"Guardado en {ruta} y {carpeta / 'bloques.csv'}")
     else:
         typer.echo(lista)
+
+
+@app.command()
+def estratos(
+    id_exp: Annotated[str, typer.Argument(help="Id del experimento, p. ej. e01")],
+    salida: Annotated[Path, typer.Option(help="Carpeta raíz de los productos")] = Path("data"),
+    escribir: Annotated[
+        bool, typer.Option("--escribir", help="Guarda los cortes en el config.yaml del experimento")
+    ] = False,
+) -> None:
+    """Cortes de los estratos de nubosidad sobre todos los píxeles de los bloques.
+
+    Solo lee el ARD (n_validas_s2): se fijan antes de cargar la referencia o correr un brazo.
+    """
+    import re
+
+    from cdcol_fm.bench.correr import calcular_cortes
+    from cdcol_fm.bench.experimento import cargar_experimento, carpeta_experimento
+
+    exp = cargar_experimento(id_exp)
+    r = calcular_cortes(exp, salida)
+    cortes = [round(float(c), 6) for c in r.cortes]
+    con_valor = r.pixeles - r.sin_dato
+    typer.echo(
+        f"{len(exp.bloques)} bloques, {r.pixeles} píxeles; {con_valor} con valor y "
+        f"{r.sin_dato} sin dato ({r.sin_dato / r.pixeles:.2%}) fuera de los estratos"
+    )
+    typer.echo(f"cortes de {exp.estratos.variable} ({', '.join(exp.estratos.nombres)}): {cortes}")
+    linea = f"  cortes: {cortes}"
+    if not escribir:
+        typer.echo(linea.strip())
+        return
+    if exp.estratos.cortes is not None:
+        raise typer.BadParameter(
+            f"{id_exp} ya tiene cortes {exp.estratos.cortes}; cambiarlos es un cambio al "
+            "pre-registro: se edita a mano y se anota en el README"
+        )
+    ruta = carpeta_experimento(id_exp) / "config.yaml"
+    texto = ruta.read_text(encoding="utf-8")
+    nuevo, n = re.subn(r"^  cortes: .*$", linea, texto, flags=re.M)
+    if n != 1:
+        raise typer.BadParameter(f"no encontré una línea '  cortes: ...' en {ruta}")
+    ruta.write_text(nuevo, encoding="utf-8")
+    typer.echo(f"Guardado en {ruta}")
 
 
 @app.command()

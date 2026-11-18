@@ -30,6 +30,11 @@ def ard_anual(serie: xr.Dataset) -> tuple[np.ndarray, list[str]]:
 
 
 def n_validas_anual(serie: xr.Dataset) -> np.ndarray:
-    """Observaciones S2 válidas en el año, por píxel (255 = sin dato cuenta como 0)."""
-    n = serie["n_validas_s2"].where(serie["n_validas_s2"] != 255, 0)
-    return np.asarray(n.sum("time")).ravel().astype("float32")
+    """Observaciones S2 válidas en el año, por píxel.
+
+    Un mes con 255 (ninguna escena cubrió el píxel) cuenta como 0. Un píxel con 255 todos los
+    meses no tiene valor: NaN, y queda fuera de los estratos.
+    """
+    sin_dato = serie["n_validas_s2"] == 255
+    n = serie["n_validas_s2"].where(~sin_dato, 0).sum("time").where(~sin_dato.all("time"))
+    return np.asarray(n).ravel().astype("float32")

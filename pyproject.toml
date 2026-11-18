@@ -33,6 +33,15 @@ indice = [
     "datacube[postgres]>=1.9",
     "odc-apps-dc-tools>=1.9",
 ]
+# Chat con los datos (ADR 0006): lo que necesita `cdcol web`, sin el cálculo del ARD.
+# anthropic < 1: la versión 1 cambia el cliente HTTP; se migra aparte (`/claude-api upgrade`).
+chat = [
+    "anthropic>=0.86,<1",
+    "boto3>=1.34",
+    "rasterio>=1.3",
+    "pyproj>=3.6",
+    "xarray>=2024.6",
+]
 # Experimentos (experimentos/): los clasificadores de los brazos.
 bench = [
     "scikit-learn>=1.4",

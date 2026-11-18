@@ -23,6 +23,15 @@ class Referencia(BaseModel):
 class Estratos(BaseModel):
     variable: str
     nombres: list[str] = Field(min_length=2)
+    # fijados por `cdcol estratos <id> --escribir` antes de cargar la referencia; None = sin fijar
+    cortes: list[float] | None = None
+
+    @model_validator(mode="after")
+    def _cortes_coherentes(self) -> Estratos:
+        c = self.cortes
+        if c is not None and (len(c) != len(self.nombres) - 1 or sorted(c) != c):
+            raise ValueError(f"cortes {c}: hacen falta {len(self.nombres) - 1}, en orden")
+        return self
 
 
 class Evaluacion(BaseModel):

@@ -25,9 +25,13 @@ referencia:
 
 estratos:
   # nubosidad del píxel en el año: suma de n_validas_s2 de los 12 meses, partida en terciles
-  # de toda la zona (no depende del resultado, solo de la cobertura de datos)
+  # sobre todos los píxeles de los bloques que tienen valor, con o sin referencia y homogéneos
+  # o no (decisión del 17-nov-2026). Un píxel sin n_validas_s2 ningún mes queda fuera.
   variable: n_validas_anual
   nombres: [nublado, intermedio, despejado]
+  # Los fija `cdcol estratos e01 --escribir` sobre el ARD, antes de cargar la referencia o correr
+  # un brazo; no se editan a mano. Si el ARD cambia y deja de darlos, `experimento` falla.
+  cortes: null
 
 evaluacion:
   pliegues: 5                     # validación cruzada por bloques (sin fuga espacial)

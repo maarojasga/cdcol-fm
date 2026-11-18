@@ -36,3 +36,25 @@ def test_producto_ard_tiene_todas_las_bandas() -> None:
     nombres = [m["name"] for m in producto["measurements"]]
     assert nombres == list(BANDAS_ARD)
     assert set(BANDAS_INCERTIDUMBRE) <= set(nombres)
+
+
+def test_cargar_env_tolera_windows_y_no_pisa_el_entorno(tmp_path, monkeypatch) -> None:
+    import os
+
+    from cdcol_fm.config import cargar_env
+
+    ruta = tmp_path / ".env"
+    ruta.write_bytes(
+        "\ufeff# comentario\r\nA_LLAVE=abc\r\nB_LLAVE=\"con comillas\"\r\n"
+        "export C_LLAVE='x=y'\r\nVACIA=\r\nYA_ESTA=del_archivo\r\n".encode()
+    )
+    for n in ("A_LLAVE", "B_LLAVE", "C_LLAVE", "VACIA"):
+        monkeypatch.delenv(n, raising=False)
+    monkeypatch.setenv("YA_ESTA", "del_entorno")
+    cargar_env(ruta)
+    assert os.environ["A_LLAVE"] == "abc"
+    assert os.environ["B_LLAVE"] == "con comillas"
+    assert os.environ["C_LLAVE"] == "x=y"
+    assert "VACIA" not in os.environ
+    assert os.environ["YA_ESTA"] == "del_entorno"
+    cargar_env(tmp_path / "no-existe")  # sin .env no pasa nada

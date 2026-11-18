@@ -129,7 +129,7 @@ def test_de_disco_a_veredicto(tmp_path: Any) -> None:
 
     from cdcol_fm.ard.bandas import BANDAS_ARD
     from cdcol_fm.ard.escritura import escribir_mes
-    from cdcol_fm.bench.correr import cargar_datos
+    from cdcol_fm.bench.correr import calcular_cortes, cargar_datos
 
     lado, res = 16, 10.0
     bloques = [f"x{i}_y0" for i in range(4)]
@@ -152,7 +152,7 @@ def test_de_disco_a_veredicto(tmp_path: Any) -> None:
         x = res * (i * lado + np.arange(lado) + 0.5)
         y = 1000.0 - res * (np.arange(lado) + 0.5)
         bosque = (np.arange(lado) < lado // 2)[None, :].repeat(lado, 0)
-        for mes in ("2024-01", "2024-02"):
+        for mes in (f"2024-{m:02d}" for m in range(1, 13)):
             ds = xr.Dataset(coords={"time": pd.Timestamp(f"{mes}-01"), "y": y, "x": x})
             for banda in BANDAS_ARD:
                 ds[banda] = (("y", "x"), np.ones((lado, lado), dtype="float32"))
@@ -168,13 +168,27 @@ def test_de_disco_a_veredicto(tmp_path: Any) -> None:
         update={
             "bloques": bloques,
             "evaluacion": exp.evaluacion.model_copy(
-                update={"pliegues": 2, "etiquetas_por_clase": [5], "presupuesto_principal": 5}
+                update={
+                    "pliegues": 2,
+                    "etiquetas_por_clase": [5],
+                    "presupuesto_principal": 5,
+                    "prueba_por_clase_y_estrato": 5,
+                }
             ),
             "referencia": exp.referencia.model_copy(
                 update={"ruta": ruta_ref, "radio_homogeneo": 1}
             ),
         }
     )
+    with pytest.raises(ValueError, match="cdcol estratos"):
+        cargar_datos(exp, tmp_path)
+    r = calcular_cortes(exp, tmp_path)
+    assert r.pixeles == lado * lado * len(bloques) and r.sin_dato == 0
+    estratos = exp.estratos.model_copy(update={"cortes": r.cortes.tolist()})
+    otros = exp.estratos.model_copy(update={"cortes": [c + 1 for c in r.cortes.tolist()]})
+    with pytest.raises(ValueError, match="el ARD cambió"):
+        cargar_datos(exp.model_copy(update={"estratos": otros}), tmp_path)
+    exp = exp.model_copy(update={"estratos": estratos})
     datos = cargar_datos(exp, tmp_path)
     assert set(datos.rasgos) == {"local-rf"}  # sin embeddings todavía
     assert set(datos.bloques.tolist()) == set(bloques)
@@ -195,3 +209,38 @@ def test_brazo_externo_se_reporta_sin_decidir() -> None:
     assert resultado["alphaearth-sonda"]["externo"] is True
     assert "h1" not in resultado["alphaearth-sonda"]
     assert resultado["galileo-r0-sonda"]["h1"] == "apoyada"
+
+
+def test_prueba_insuficiente_falla_en_vez_de_muestrear_menos() -> None:
+    from cdcol_fm.bench.correr import PruebaInsuficiente
+
+    exp = _exp()
+    datos = _datos(fm_falla_con_nube=False)
+    # casi no hay no-bosque en el estrato nublado
+    quitar = (datos.estratos == 0) & (datos.clases == 0)
+    datos.clases[np.flatnonzero(quitar)[20:]] = 1
+    with pytest.raises(PruebaInsuficiente, match="nublado, no-bosque") as e:
+        evaluar(exp, datos, _crear)
+    assert "intermedio" not in str(e.value)
+
+
+def test_pixel_sin_dato_todo_el_anio_no_tiene_valor() -> None:
+    from cdcol_fm.bench.rasgos import n_validas_anual
+
+    t = np.array(["2024-01-01", "2024-02-01"], dtype="datetime64[ns]")
+    n = np.array([[[255, 255]], [[255, 3]]], dtype="uint8")  # (time, y, x)
+    ds = xr.Dataset({"n_validas_s2": (("time", "y", "x"), n)}, coords={"time": t})
+    v = n_validas_anual(ds)
+    assert np.isnan(v[0]) and v[1] == 3
+
+
+def test_cortes_del_config_deben_estar_en_orden() -> None:
+    from pydantic import ValidationError
+
+    exp = _exp()
+    datos = exp.estratos.model_dump()
+    with pytest.raises(ValidationError):
+        type(exp.estratos)(**{**datos, "cortes": [20.0, 10.0]})
+    with pytest.raises(ValidationError):
+        type(exp.estratos)(**{**datos, "cortes": [10.0]})
+    assert type(exp.estratos)(**{**datos, "cortes": [10.0, 20.0]}).cortes == [10.0, 20.0]

@@ -52,3 +52,10 @@ def test_muestras_balanceadas_por_clase_y_estrato() -> None:
     prueba = muestra_de_prueba(clases, estratos, 3, rng, np.ones(clases.size, bool))
     for e in (0, 1):
         assert np.bincount(clases[prueba][estratos[prueba] == e]).tolist() == [3, 3]
+
+
+def test_asignar_estratos_con_cortes_fijos() -> None:
+    from cdcol_fm.bench.muestreo import asignar_estratos
+
+    valor = np.array([0.0, 5.0, 10.0, 15.0, np.nan])
+    assert asignar_estratos(valor, np.array([5.0, 10.0])).tolist() == [0, 1, 2, 2, -1]

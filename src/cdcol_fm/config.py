@@ -76,6 +76,28 @@ def cargar_pais(id_pais: str, raiz: Path = RAIZ_CONFIG) -> Pais:
     return Pais.model_validate(_leer_yaml(raiz / "paises" / f"{id_pais}.yaml"))
 
 
+def cargar_env(ruta: Path = RAIZ_CONFIG.parent / ".env") -> None:
+    """Pone en el entorno las variables de ``.env`` que no estén ya definidas.
+
+    Formato ``NOMBRE=valor`` por línea; ``#`` comenta. Tolera comillas y finales CRLF de Windows.
+    """
+    import os
+
+    if not ruta.is_file():
+        return
+    for linea in ruta.read_text(encoding="utf-8-sig").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        nombre, _, valor = linea.partition("=")
+        nombre = nombre.removeprefix("export ").strip()
+        valor = valor.strip()
+        if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "\"'":
+            valor = valor[1:-1]
+        if nombre and valor:
+            os.environ.setdefault(nombre, valor)
+
+
 def cargar_zona(id_zona: str, raiz: Path = RAIZ_CONFIG) -> Zona:
     return Zona.model_validate(_leer_yaml(raiz / "zonas" / f"{id_zona}.yaml"))
 

@@ -29,7 +29,7 @@ global".
 | Tarea | Bosque / no bosque, por píxel de 10 m |
 | Referencia | MapBiomas Colombia reclasificado (ver "Limitaciones") |
 | Píxeles elegibles | Ventana de 7 × 7 px con una sola clase en la referencia (lejos de bordes del mapa de 30 m) |
-| Estratos | Terciles de observaciones S2 válidas en el año (`n_validas_s2` sumada): nublado, intermedio, despejado |
+| Estratos | Terciles de observaciones S2 válidas en el año (`n_validas_s2` sumada) sobre **todos** los píxeles de los 15 bloques con valor, tengan o no referencia: nublado, intermedio, despejado. Cortes fijos (ver "Estratos") |
 | Brazo local (`local-rf`) | Bosque aleatorio sobre mediana, p10 y p90 anuales de las 10 bandas S2 y VV/VH |
 | Brazo fundacional (`galileo-r0-sonda`) | Regresión logística sobre embeddings de Galileo-tiny sin adaptar (receta `r0-base`) |
 | Línea base externa (`alphaearth-sonda`) | Regresión logística sobre los embeddings anuales 2024 de AlphaEarth (Earth Engine, 64 dim, 10 m). No usa nuestro ARD: se reporta, no decide |
@@ -57,6 +57,29 @@ Regla fija (`src/cdcol_fm/bench/seleccion.py`), aplicada por `cdcol elegir-bloqu
 WorldCover se usa solo para elegir: es independiente de la referencia (MapBiomas) y no mira
 resultados. La tabla completa queda en `bloques.csv`.
 
+## Estratos
+
+Los cortes se calculan sobre todos los píxeles de los 15 bloques que tienen valor de
+`n_validas_anual`, aunque no tengan referencia o no sean homogéneos: no dependen de MapBiomas.
+Un mes con `n_validas_s2 = 255` (ninguna escena cubrió el píxel) cuenta como 0 observaciones; un
+píxel con 255 los 12 meses no tiene valor y queda fuera de los estratos y de la prueba.
+
+Los cortes se fijan después de calcular el ARD y antes de cargar la referencia o correr
+cualquier brazo, con `cdcol estratos e01 --escribir`, y quedan en `config.yaml`. Si el ARD
+cambia y ya no da los mismos cortes, `cdcol experimento` falla.
+
+| | |
+|---|---|
+| Cortes (`n_validas_anual`) | *por fijar* |
+| Píxeles de los 15 bloques | *por fijar* |
+| Sin valor (fuera) | *por fijar* |
+
+**Prueba suficiente.** Antes de entrenar, `cdcol experimento` comprueba que cada pliegue tenga
+2000 candidatos de prueba por clase en cada estrato. Si no alcanzan (p. ej. poco no-bosque en el
+estrato nublado), falla con la lista de pliegue × estrato × clase y sus conteos, en vez de
+muestrear menos sin avisar. Lo que se haga entonces se decide y se anota aquí antes de ver
+resultados.
+
 ## Criterio de decisión (fijado antes de ver datos)
 
 `brecha = exactitud(fundacional) − exactitud(local)`, con 100 etiquetas por clase, promediada
@@ -82,8 +105,10 @@ el mismo IC, para responder si la degradación es de Galileo o de los modelos gl
 uv sync --extra cubo --extra bench
 # 1. ARD de los 12 meses de los bloques del config
 uv run cdcol ard-mes macarena 2024-01 --bloques x480_y182,...   # y así cada mes
-# 2. la referencia en la ruta del config (ver abajo)
-# 3. el experimento: corre los brazos que tengan datos y escribe resultados/
+# 2. los cortes de los estratos, solo con el ARD (antes de tener la referencia)
+uv run cdcol estratos e01 --escribir
+# 3. la referencia en la ruta del config (ver abajo)
+# 4. el experimento: corre los brazos que tengan datos y escribe resultados/
 uv run cdcol experimento e01
 ```
 
@@ -94,29 +119,35 @@ presupuesto × estrato) y `veredicto.md`.
 
 1. **Fijar los bloques.** `cdcol elegir-bloques e01 --escribir` (necesita red) y commit de
    `config.yaml` y `bloques.csv`.
-2. **Referencia.** Bajar MapBiomas Colombia colección 3 (1985-2024), año 2024, recortarla a la
+2. **Fijar los cortes de los estratos.** `cdcol estratos e01 --escribir` con el ARD de los 15
+   bloques, antes de bajar la referencia; anotar cortes y píxeles sin valor en "Estratos".
+3. **Referencia.** Bajar MapBiomas Colombia colección 3 (1985-2024), año 2024, recortarla a la
    zona y confirmar la reclasificación de `config.yaml` contra su leyenda. Ojo con el código 4: en
    la leyenda panamazónica es formación sabanera y no debería contar como bosque.
-3. **Puntos independientes.** MapBiomas es a su vez un modelo (Landsat, 30 m): sirve para
+4. **Puntos independientes.** MapBiomas es a su vez un modelo (Landsat, 30 m): sirve para
    entrenar y comparar brazos, pero no como verdad absoluta. Para la tesis hace falta una
    muestra fotointerpretada propia (p. ej. 300 puntos estratificados) y reportar ambas.
-4. **Brazo fundacional.** Depende de `cdcol embeber` (ADR 0004 aceptado).
-5. **AlphaEarth.** Exportar de Earth Engine los embeddings 2024 de los 15 bloques en la grilla
+5. **Brazo fundacional.** Depende de `cdcol embeber` (ADR 0004 aceptado).
+6. **AlphaEarth.** Exportar de Earth Engine los embeddings 2024 de los 15 bloques en la grilla
    nacional, y que `correr.py` los lea como rasgos `alphaearth-2024`.
-6. **Nube simulada.** Implementar el vaciado de meses en `bench/` (y en `embeber` para Galileo).
-7. **ARD con el desfase corregido.** Todo ARD anterior a la corrección del desfase de +1000 de S2
+7. **Nube simulada.** Implementar el vaciado de meses en `bench/` (y en `embeber` para Galileo).
+8. **ARD con el desfase corregido.** Todo ARD anterior a la corrección del desfase de +1000 de S2
    se recalcula; el E01 solo corre sobre ARD nuevo.
 
 ## Limitaciones conocidas
 
 - La referencia a 30 m favorece rasgos que se parecen a Landsat; se mitiga con la ventana
   homogénea y con los puntos independientes.
+- Distinto radar (riesgo 1 del ADR 0004): Galileo se preentrenó con sigma0 sin aplanar el
+  relieve; el cubo le da gamma0 corregido por relieve (RTC). Para `r0-base` se usa gamma0 tal
+  cual y la diferencia cuenta como parte de la degradación, sobre todo en la serranía.
 - Un año y una zona: el resultado vale para bosque/no bosque en La Macarena, no para el trópico
   en general. E02 y E03 lo extienden (cultivos, otra zona).
 
 ## Cambios al pre-registro
 
-Todos antes de tener ARD corregido, referencia o embeddings: ningún resultado del E01 existía.
+Todos antes de cargar la referencia o tener embeddings: ningún resultado de los brazos existía.
+Cada entrada dice qué datos sí existían a esa fecha.
 
 - **17-nov-2026.** Se agrega AlphaEarth como línea base externa (no decide). Razón: sin ella, un
   resultado negativo de Galileo se puede atribuir a "un modelo pequeño" y no a los modelos
@@ -127,3 +158,10 @@ Todos antes de tener ARD corregido, referencia o embeddings: ningún resultado d
 - **17-nov-2026.** Galileo-tiny solo, sin Presto. Razón: Presto cambia la pregunta (qué
   arquitectura resiste la nube) y duplica `embeber`; va en otro experimento.
 - **17-nov-2026.** El ARD se recalcula sin el desfase de +1000 de S2 (riesgo 2 del ADR 0004).
+- **17-nov-2026.** Los terciles de nubosidad se calculan sobre todos los píxeles de los 15
+  bloques con valor de `n_validas_anual`, no sobre "toda la zona" (como decía el config) ni sobre
+  los candidatos muestreados (como hacía el código, que hacía depender los cortes de la
+  referencia). Los cortes se fijan después de calcular el ARD y antes de cargar la referencia o
+  correr cualquier brazo: a esa fecha el ARD de 2024 de los 15 bloques ya existía y se había
+  visto su nubosidad por bloque y mes, pero no existían la referencia ni ningún resultado de los
+  brazos. Se agrega además la comprobación de prueba suficiente por pliegue, estrato y clase.

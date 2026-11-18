@@ -18,6 +18,11 @@ COPY config ./config
 COPY experimentos ./experimentos
 RUN uv sync --locked --no-dev --extra cubo --extra radar --extra bench
 
+# commit del código, para el linaje (la imagen no trae .git). Va al final para no invalidar la
+# caché de las dependencias en cada commit
+ARG CDCOL_COMMIT=desconocido
+ENV CDCOL_COMMIT=$CDCOL_COMMIT
+
 # los productos se escriben en /datos, que se monta desde el computador
 WORKDIR /datos
 ENTRYPOINT ["cdcol"]

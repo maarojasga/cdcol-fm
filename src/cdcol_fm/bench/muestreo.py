@@ -37,16 +37,28 @@ def homogeneo(clases: np.ndarray, radio: int) -> np.ndarray:
     return np.asarray(np.all(ventanas == centro, axis=(-2, -1)) & (clases != SIN_CLASE))
 
 
-def estratos_por_cuantiles(valor: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
-    """Estrato 0..n-1 por cuantiles de ``valor`` (menor valor → estrato 0) y los cortes.
-
-    Con ``n_validas_anual``, el estrato 0 es el más nublado. NaN → -1.
-    """
+def cortes_por_cuantiles(valor: np.ndarray, n: int) -> np.ndarray:
+    """Los n-1 cortes que parten ``valor`` (sin NaN) en n cuantiles."""
     finito = np.isfinite(valor)
-    cortes = np.quantile(valor[finito], np.linspace(0, 1, n + 1)[1:-1])
+    if not finito.any():
+        raise ValueError("no hay valores para calcular los cortes")
+    return np.quantile(valor[finito], np.linspace(0, 1, n + 1)[1:-1])
+
+
+def asignar_estratos(valor: np.ndarray, cortes: np.ndarray) -> np.ndarray:
+    """Estrato 0..len(cortes) (menor valor → estrato 0). NaN → -1.
+
+    Con ``n_validas_anual``, el estrato 0 es el más nublado.
+    """
     estrato = np.searchsorted(cortes, valor, side="right").astype("int16")
-    estrato[~finito] = -1
-    return estrato, cortes
+    estrato[~np.isfinite(valor)] = -1
+    return estrato
+
+
+def estratos_por_cuantiles(valor: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
+    """Estrato 0..n-1 por cuantiles de ``valor`` y los cortes."""
+    cortes = cortes_por_cuantiles(valor, n)
+    return asignar_estratos(valor, cortes), cortes
 
 
 def pliegues_por_bloque(bloques: list[str], k: int, semilla: int = 0) -> dict[str, int]:
